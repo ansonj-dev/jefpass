@@ -1,47 +1,77 @@
-# Project Brief
+# JëfPass Project Brief
 
-## Product Hypothesis
+## One sentence
 
-Independent phone, laptop, and small-appliance repair technicians in Dakar may need a portable record of agreed work, customer acknowledgement, and payment evidence. The first workflow is one technician and one customer, not a marketplace, merchant POS, public reputation score, or lending product.
+JëfPass is a portable work passport for independent technicians that records agreed service scope, customer acknowledgement and Lightning payment evidence as separate facts.
 
-The hypothesis has not been validated through interviews. Labour-market statistics in the [original idea](dakar_bitcoin_hack_2026_project_idea_jefpass.md) describe context, not demonstrated demand, adoption, or reachable customers. Interviews and a supervised pilot remain next steps; no invented market estimate or testimonial.
+## User and problem hypothesis
 
-## Implemented Workflow
+The initial user is an independent phone, laptop or small-appliance repair technician in Dakar. The hypothesis is that informal workers may rely on fragmented chat messages, paper notes and separate payment apps, making it difficult to carry consistent job and payment records between customers.
 
-1. Worker signs in and creates a repair quote in sats; any XOF text is a display note, not a verified exchange rate.
-2. Customer opens an expiring capability link and signs the exact quote with a browser-generated one-time Nostr key. No customer account required.
-3. Worker records completion; customer signs receipt or requests correction. Service and payment states remain separate.
-4. Worker explicitly requests an invoice from their receive-only connected wallet. Customer pays from an external wallet on the same network.
-5. Server reconciles that invoice and requires exact amount/hash and matching preimage before marking settlement. A server-issued Ed25519 receipt snapshots completed service independently of payment, including an unpaid state when appropriate. Authorized private export includes evidence; public receipts omit invoice/preimage. Optional NIP-07 publication sends only a minimal commitment, not the full dossier.
+This is a hypothesis requiring interviews. Labour-market statistics provide context but do not prove this exact problem or demonstrate demand. No customer interviews, technician interviews or measured pilot are claimed in the current evidence.
 
-The EN/FR interface, profiles, workbench, job lifecycle, customer links, signed actions, encrypted NWC adapters, receipts, public passport, and optional Nostr controls are implemented. Customer links expire after seven days; action nonces after five minutes. Accept/acknowledge/dispute signatures use sessionStorage browser keys scoped by job.id, not verified identities.
+## Core workflow
 
-IndexedDB stores worker-scoped drafts and queued nonfinancial creation with stable clientId and backend scoped deduplication. There is no service-worker offline app shell or guaranteed offline reload; the manifest is an install hint. Optional photos are deferred with no upload endpoint. Authenticated `/api/ai/draft` implements strict title/description/category output and a local fallback without provider calls when `OPENAI_API_KEY` is unset; default model is `gpt-4.1-mini`. No paid calls have been made; voice and Wolof support are not implemented.
+1. Worker creates a repair quote with scope, category, amount and due date.
+2. Customer opens an expiring link and signs acceptance of the exact scope without creating an account.
+3. Worker records completion.
+4. Customer signs acknowledgement or dispute.
+5. Worker requests an incoming Lightning invoice from a dedicated receive-only NWC connection.
+6. Customer pays from a separate wallet.
+7. Server reconciles the original invoice and checks the exact amount, payment hash and matching preimage.
+8. JëfPass issues an immutable receipt snapshot and provides a public verifier and private export.
 
-## Evidence Labels
+## Protocol roles
 
-Agreement, service acknowledgement, and payment evidence are different layers. `QUOTED`, `ACCEPTED`, `COMPLETED`, `ACKNOWLEDGED`, and `DISPUTED` describe service, not payment. Implemented payment states include `NOT_REQUESTED`, `INVOICE_CREATED`, `PENDING`, `UNKNOWN`, `SETTLED`, `EXPIRED`, `FAILED`, `CANCELLED`, `UNDERPAID`, and `OVERPAID`. Creation is reserved durably before network I/O; ambiguity must not create replacement invoices. Accepted hold invoices remain `PENDING` after local expiry until wallet terminal evidence, an unresolved limitation.
+- Bitcoin Lightning: payment request and wallet-reported settlement evidence.
+- NWC: permission-scoped access to the receiving wallet.
+- Nostr: signed customer action proofs and optional worker receipt commitment.
+- SHA-256 and Ed25519: receipt integrity and issuer signature.
+- AI: optional reviewed job-description drafting only.
+- IndexedDB: non-financial drafts that synchronize later.
 
-Only checked `SETTLED` evidence may be presented as verified payment; a UI helper is not the verifier. Public browser checks recompute the canonical hash and verify Ed25519 against the current installation issuer key from `/api/session`. Public payment hash/source/network/timestamps and `SHA256_MATCH` are issuer claims, not an independent wallet query. Private export includes invoice/preimage evidence for independent checks. Optional worker Nostr authorship is separate: kind 30078 signs canonical sorted `{commitment,receiptId}` with `tags: [["d", receiptId]]`. Neither issuer nor browser signatures prove physical repair quality or legal identity. Cash/mobile-money provider verification is outside scope.
+Customer proofs use JëfPass ephemeral kind 27236. NIP-98 reserves kind 27235 for HTTP authentication. Worker receipt commitments use kind 30078 and are published only after external NIP-07 signing.
 
-## Five Judging Criteria
+## What is implemented
 
-Based on the [judge audit](dakar_bitcoin_hack_2026_judge_audit.md); no score or successful wallet gate is claimed.
+- Account registration and login.
+- Worker profile and bilingual English/French interface.
+- Job creation, expiring customer links and signed customer actions.
+- Server-side ownership and invoice-state guards.
+- Receive-only NWC adapter and BOLT11 validation.
+- Durable invoice reservation and conservative UNKNOWN handling.
+- Worker-bound encrypted NWC credential envelopes with legacy read compatibility.
+- Ed25519 receipt issuer signatures, public verifier and private bundle verifier.
+- Worker signer public-key binding for receipt attachments.
+- Opt-in public passport and optional worker Nostr commitment event.
+- Offline non-financial job drafts and deduplicated sync.
+- Optional AI draft endpoint with local fallback.
+
+## Evidence and honest boundaries
+
+- GitHub Actions on main has passed 127 automated tests across 9 test files, typecheck, production build and the configured production-dependency audit gate.
+- A locally exercised unpaid worker-to-customer-to-receipt browser journey is documented in VERIFICATION.md.
+- Automated tests exercise signatures, state transitions, invoice validation and mocked wallet-response handling.
+- The recorded verification evidence reports zero genuine external wallet settlements.
+- NIP-07 external signer and relay publication remain unexercised in the recorded evidence.
+- No user interviews, adoption metrics or field pilot are claimed.
+- Public verifier checks installation-key consistency; it does not query a live wallet or independently establish issuer identity.
+- The receipt does not prove repair quality or legal identity.
+
+## Judging criteria alignment
 
 | Criterion | Implemented evidence | Remaining validation |
-| --- | --- | --- |
-| Usefulness & Local Impact | Narrow technician workflow; consented interviews and measured pilot | No interviews or adoption evidence |
-| Security by Design | Receive-only adapters, encrypted NWC, durable ambiguity handling, signed actions, private exports, pinned SDK patch and 122 tests | Independent audit and genuine wallet validation absent |
-| UX/UI Quality | EN/FR browser-tested workflow, separate statuses, mobile overflow checks and actual offline synchronization | Physical-device usability, full accessibility and slow-network checks not certified |
-| Working MVP | Implemented account-to-quote-to-customer-to-receipt flow; public hash/signature checks; reported tests/typecheck/build passes | 0 genuine wallet settlements; external signer/relay path unexercised |
-| Clear Pitch & Docs | Setup, architecture, measured verification report, three-minute script, MIT license | Recording and public publication not completed |
+|---|---|---|
+| Usefulness and local impact | Specific technician workflow and customer confirmation | Consented interviews and measured pilot |
+| Security by design | Receive-only NWC adapter, scoped signatures, worker-bound credential encryption, request guards and safe UNKNOWN handling | Independent review, live wallet and crash/recovery drills |
+| UX/UI | English/French interface, customer QR flow, mobile-first layout, separate service/payment states | Physical devices, accessibility review and low-bandwidth tests |
+| Working MVP | Account-to-quote-to-customer-to-unpaid-receipt journey and a tested wallet adapter | Genuine external Lightning wallet settlement and independently checkable payment evidence |
+| Pitch and docs | README, architecture, threat model, demo guide, limitations and verification report | Final demo recording and user-validation evidence |
 
-The wallet implementation submission requirement is separate from these criteria. Documentation and sample jobs do not satisfy it.
+The Bitcoin/Lightning wallet requirement is separate from criterion scoring. Adapter fixtures do not satisfy the external payment demonstration.
 
-## Measurement And Scope
+## Measurement and non-goals
 
-Observed on 19 November: one local unpaid account-to-customer-to-receipt journey, one independently accepted private proof bundle, one offline draft synchronized once, and two seed quotes idempotently recreated. These are developer demonstrations, not customer adoption. Live verified payments: **0**. Interviews: **0**. Median completion time and real-device usability are not measured. See [VERIFICATION.md](VERIFICATION.md).
+No market size, user reach, payment volume or adoption metrics are invented. Record measured outcomes from a supervised pilot before including numbers.
 
-The local production server is localhost:3100, not a public deployment. Tests, typecheck, clean build, unpaid browser flow and offline recovery are recorded in [VERIFICATION.md](VERIFICATION.md). Wallet credentials/lab, external signer, public deployment and GitHub publication remain unavailable or not performed. Source is MIT licensed.
-
-Remaining priorities: provision a real test-network receiving wallet and external payer, validate live settlement and external signer publication, perform physical-device usability/backup-restore checks, conduct interviews, and publish the submission. Mainnet is always disabled. No escrow, spending agent, fiat conversion, mobile-money API, credit score, identity certification or automatic public dossier is claimed.
+No marketplace, escrow, lending, public rating, credit score, token, exchange, fiat cash-out, mobile-money settlement, identity certification or automated spending agent is part of this MVP.
