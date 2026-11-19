@@ -1,79 +1,196 @@
-# JefPass
+# JëfPass
 
-Your work. Your proof. A portable work passport prototype for independent repair technicians in Dakar: quote, customer acknowledgement, completion, and signed receipt, with Lightning evidence kept separate from service claims.
+**Your work. Your proof.**
 
-## Current Status
+JëfPass is an open-source work-record and payment-evidence passport for independent repair technicians. It helps a worker agree a clear scope with a customer, record completion, verify an incoming Lightning payment, and keep a portable, shareable history of completed work.
 
-The Next.js app implements accounts, worker profiles, EN/FR job management, customer browser-key signatures, encrypted receive-only NWC connections, durable invoice reservations, reconciliation, private proof export, public receipt verification, and optional Nostr commitment signing/publication. IndexedDB supports nonfinancial drafts and idempotent job creation. Optional AI requires both `AI_ENABLED=true` and a server-side key; it is disabled by default even when a key is inherited.
+[![JëfPass CI](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml/badge.svg)](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml) · [Architecture](ARCHITECTURE.md) · [Threat model](THREAT_MODEL.md) · [Demo guide](DEMO_GUIDE.md)
 
-**0 genuine wallet settlements. No user interviews, deployment, or public Git repository publication completed.** No wallet credentials or Docker/node wallet lab tools are available. External NIP-07 signing and relay publication have not been exercised. The unpaid job-to-receipt browser journey and offline reconnection were exercised against the real local backend.
+## The problem
 
-| Evidence | Status |
-| --- | --- |
-| Local tests, typecheck, production build | Reported passing during development, including Next.js 16.4.6 build; final revision evidence below |
-| External customer-wallet payment and preimage check | Blocked; 0 verified |
-| Customer signatures, receipt export/verification | Implemented; fixture checks are not external wallet evidence |
-| NIP-07 and relay publication | Implemented path; external signer/publication not exercised |
-| EN/FR and offline drafts | Browser checked at 390px; one offline draft synchronized on reconnection without payment changes |
-| Interviews, adoption, deployment | None evidenced; do not imply otherwise |
+Independent workers often rely on chat messages, paper notes and separate payment applications to document jobs. A worker may have difficulty carrying a consistent record of agreed work, customer acknowledgement and payment evidence from one customer or platform to another.
 
-See [VERIFICATION.md](VERIFICATION.md) for exact commands, test counts, browser evidence and external blockers.
+JëfPass explores a narrow workflow: one technician and one customer, starting with phone, laptop and small-appliance repairs. This is a product hypothesis, not a claim that interviews or adoption research have already validated the need. The project currently has no completed field interviews or measured pilot.
 
-## Local Setup
+## What JëfPass does
 
-Requires Node.js 24 with built-in `node:sqlite`, npm, persistent writable local disk, and one server process. This is not a serverless or multi-instance architecture. Docker is not required for the app.
+1. A technician creates a quote with a clear description, category, amount and optional due date.
+2. The customer opens an expiring link, reviews the exact scope and signs acceptance in their browser. A customer account is not required.
+3. The technician records completion. The same customer signing session can acknowledge the work or submit a dispute.
+4. The technician connects a dedicated receive-only Nostr Wallet Connect (NWC) connection and requests an invoice.
+5. JëfPass verifies the exact BOLT11 invoice and later reconciles the original invoice against the same wallet. A payment is marked SETTLED only when the wallet reports the incoming invoice settled and the returned preimage hashes to the original payment hash.
+6. JëfPass issues an immutable, signed receipt. A worker can keep it private, export a private proof bundle, or opt a completed record into a public passport.
 
-1. Install Node 24 and confirm the selected runtime supports `node:sqlite`.
-2. Optionally create a private `.env.local` from [.env.example](.env.example). Local database and durable installation keys work without supplied secrets. Keep the AI key empty.
-3. Install once and start the app from the repository root:
+**Service facts and payment facts remain separate.** Customer acceptance does not prove the work was completed. A completion acknowledgement does not prove that a payment settled. A receipt signature proves that the application issuer signed a specific record; it does not certify repair quality or legal identity.
 
-```sh
-npm install
+## Product status and evidence
+
+This repository contains a working Next.js prototype, not a production-certified financial service.
+
+- The account, worker profile, job lifecycle, customer confirmation, public passport, receipt issuer signature, browser receipt verifier, private export, and NWC adapter are implemented.
+- The NWC integration has automated tests for invoice validation, exact amounts, network checks, payment-hash matching, preimage verification and uncertain outcomes.
+- The recorded verification report describes an unpaid browser journey, a private bundle check and an offline draft sync.
+- **Genuine external wallet settlements: 0 in the recorded verification evidence.** The adapter implementation and its fixture tests do not prove live wallet interoperability.
+- External NIP-07 signing and public relay publication have not been independently demonstrated in the recorded evidence.
+- No user interviews, adoption metrics or field pilot are claimed.
+- No public production deployment is claimed.
+
+See [VERIFICATION.md](VERIFICATION.md) and [LIMITATIONS.md](LIMITATIONS.md) for the evidence boundary. Never present a fixture, seeded record or screenshot as a real payment.
+
+## Why these protocols are used
+
+| Technology | Purpose |
+|---|---|
+| Bitcoin Lightning | Creates incoming invoices and provides wallet-reported settlement evidence |
+| Nostr Wallet Connect | Connects to a worker-controlled Lightning wallet using a dedicated, receive-only connection |
+| Nostr events | Signs customer actions and optionally lets a worker sign a receipt commitment with an external NIP-07 signer |
+| SHA-256 and Ed25519 | Commits to and signs receipt content so tampering can be detected |
+| AI | Optional assistant to draft job descriptions; it has no authority over consent, receipts or payments |
+| IndexedDB | Saves non-financial job drafts locally and syncs them when connectivity returns |
+
+## Interface
+
+The interface supports English and French and is designed mobile-first.
+
+- Public landing page: /
+- Worker workspace: /app
+- Customer confirmation: /confirm/[token]
+- Public receipt verifier: /verify/[receipt-id]
+- Opt-in public worker passport: /passport/[worker-id]
+
+The offline feature is deliberately limited to local job drafts and queued job creation. It does not support offline Lightning payments, offline customer signatures or a guaranteed offline application-shell reload.
+
+## Architecture at a glance
+
+- Next.js App Router and TypeScript run in the Node.js runtime.
+- API handlers enforce account ownership, request-origin checks, bounded JSON input and rate limits.
+- Node 24 built-in SQLite provides durable local storage for a single server instance.
+- NWC credentials are encrypted with AES-256-GCM. New versioned envelopes use worker-specific authenticated data; the reader remains compatible with the earlier envelope format.
+- Customer action proofs use JëfPass application-specific ephemeral Nostr kind 27236. They are not published to relays. NIP-98 reserves kind 27235 for HTTP authentication.
+- Worker receipt commitments use kind 30078 and are published only after an external NIP-07 signer signs them.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow, routes, state transitions and trust boundaries.
+
+## Quick start
+
+### Requirements
+
+- Node.js 24.x
+- npm
+- A persistent writable local data directory
+- One running application instance
+
+SQLite uses Node's built-in node:sqlite API. This application is not designed for serverless ephemeral filesystems, multiple replicas or horizontally shared SQLite storage.
+
+### Install and run
+
+~~~~bash
+npm ci
 npm run dev -- --port 3100
-```
+~~~~
 
-The current review server is at http://localhost:3100. Reuse it while running; otherwise use the URL printed by Next.js, choosing another port if occupied. The dev script binds all interfaces: restrict access with a firewall. Another customer's device needs a reachable trusted HTTPS origin, not its own `localhost`; browser cryptography requires a secure context.
+Open http://localhost:3100.
 
-The project pins `@getalby/sdk` 9.0.0 and applies a required `patch-package` npm `postinstall` patch for null response envelopes and method correlation. This is not a NIP-47 protocol rewrite. Use the committed lockfile with `npm ci` for reproducible installations. Do not skip install scripts or silently use an unpatched SDK.
+Use the committed lockfile. The SDK postinstall patch is required; do not install with scripts disabled.
 
-Run checks separately:
+### Environment
 
-```sh
+Start from .env.example. The essential settings are:
+
+| Variable | Purpose |
+|---|---|
+| DB_PATH | Persistent SQLite database path; defaults to ./data/jefpass.sqlite |
+| APP_ORIGIN | Exact browser-facing origin. Required in production and must use HTTPS |
+| APP_ENCRYPTION_KEY | Optional 32-byte key encoded as 64 hex characters or base64. If omitted, a persistent local key is generated beside the database |
+| LIGHTNING_NETWORK | regtest by default; testnet and signet are supported when the wallet reports the same network. Mainnet is disabled |
+| NWC_ALLOWED_RELAYS | Exact comma-separated WSS relay allowlist. Empty means wallet connections fail closed |
+| NEXT_PUBLIC_NOSTR_RELAYS | Optional public relay list for worker commitment publication |
+| AI_ENABLED | Must be explicitly true before any provider call is made |
+| OPENAI_API_KEY | Optional server-side key; never expose it to the browser |
+| OPENAI_MODEL | Optional model identifier; defaults to gpt-4.1-mini |
+
+In production, set APP_ORIGIN to the exact HTTPS origin used by the browser, preserve the database and generated key files, restrict access to the persistent volume, and use encrypted backups. The app does not trust forwarded-host headers to infer the public origin.
+
+### Checks
+
+~~~~bash
 npm test
 npm run typecheck
 npm run build
-```
+npm audit --omit=dev --audit-level=moderate
+~~~~
 
-Keep the dev server and production build in separate processes only after stopping one or use different build directories. Do not expose the development server publicly. Pin `APP_ORIGIN` to the actual browser-facing HTTPS origin behind a reverse proxy; forwarded headers are deliberately not trusted.
+GitHub Actions runs the same checks on pushes to main and pull requests.
 
-For repeatable quoted-only sample data, register a dedicated account, set `DEMO_EMAIL` and `DEMO_PASSWORD` privately in your terminal, and run `npm run demo:seed`. The fixtures are labelled DEMO SEED and are idempotent per account. No acknowledgements, invoices or payments are seeded.
+## Demo data
 
-Export records from Profile, then run `npm run verify:bundle -- path/to/private-export.json`. This checks canonical receipt signatures, private scope, customer signatures and available invoice/amount/preimage evidence without this server. Set `TRUSTED_ISSUER_PUBLIC_KEY` to an independently obtained issuer SPKI base64 key for issuer pinning. Without a pin, valid signatures are self-contained consistency checks, not trusted identity or live wallet queries.
+Seed only quoted, unpaid demonstration jobs for a dedicated demo account:
 
-Do not spend limited API credits for this build. Leave `OPENAI_API_KEY` empty. AI is optional; no paid key was supplied and no provider call is required for setup or demo.
+~~~~bash
+DEMO_EMAIL="demo@example.test" DEMO_PASSWORD="replace-with-a-private-password" npm run demo:seed
+~~~~
 
-## Safety Contract
+Do not use real customer data for a public demo. Seeded jobs are labelled and do not include customer acknowledgements, invoices or payment settlements.
 
-- `DB_PATH=./data/jefpass.sqlite`; optional `APP_ENCRYPTION_KEY` encodes exactly 32 bytes as hex or base64. Without it, a durable key is generated beside the database (default `data/key`). The generated Ed25519 issuer key persists as `data/issuer-private.pem` with the default path. There are no supported receipt-key environment variables.
-- `LIGHTNING_NETWORK` defaults to `regtest`; `testnet` and `signet` require matching wallet `getInfo`. **Mainnet is always disabled regardless of flags.**
-- `NWC_ALLOWED_RELAYS` is an exact comma-separated allowlist matching parsed target `URL.href`, including trailing slash. Empty fails closed. WSS and the operator allowlist are the controls; there is no separate private-address filter.
-- Receive-only NWC through `@getalby/sdk` `NWCClient`: `get_info`, `make_invoice`, `lookup_invoice`; no spending methods.
-- Invoice signature, exact integer millisatoshi amount, network, expiry, and payment hash must validate. `SETTLED` requires authoritative lookup and a matching preimage, not a UI label.
-- Reserve invoice creation durably before network I/O. Ambiguity is `UNKNOWN`; never retry creation automatically, especially when the hash is missing.
-- Receipts are Ed25519 **server issuer-signed**, not worker-signed unless a separately verified NIP-07 worker signature is attached. Customer signatures prove control of a browser key, not legal identity or repair quality.
-- Full proof bundles are private exports. No raw invoice, preimage, customer data, or NWC URI on public pages or relays.
-- Public browser verification checks canonical hash and Ed25519 signature against the current installation issuer key from `/api/session`. Server-signed payment claims are not an independent wallet query; authorized private exports include invoice/preimage evidence for independent checks.
-- An accepted hold invoice remains `PENDING` after local expiry until an authoritative wallet terminal state; settlement still requires an exact matching preimage.
-- Offline support is nonfinancial drafts and idempotent job creation, not offline payments. The manifest is an install hint; no service-worker offline app shell or guaranteed offline reload exists. Photos/uploads are deferred.
+## Lightning wallet setup
+
+The default network is REGTEST / NO REAL MONEY. Mainnet is always disabled.
+
+1. Create a dedicated NWC connection in a compatible wallet.
+2. Restrict the connection to get_info, make_invoice and lookup_invoice. Do not grant spending permissions.
+3. Configure the exact WSS relay URL in NWC_ALLOWED_RELAYS, including its normalized trailing slash.
+4. Configure LIGHTNING_NETWORK to match the wallet's get_info response.
+5. Paste the NWC URI into the authenticated Connections view. The server checks the connection, encrypts it at rest and displays only the wallet identity summary.
+6. Create a completed job, request its invoice, and pay that invoice from a separate compatible wallet on the same test network.
+7. Reconcile the original invoice. Do not create a replacement if the state is UNKNOWN.
+
+A genuine external payment still needs to be performed and captured as evidence before claiming the wallet gate is demonstrated. Never fund this prototype with mainnet money.
+
+## Receipts and independent verification
+
+Each receipt contains a canonical payload, SHA-256 commitment and Ed25519 signature from the application issuer. The public verifier recomputes the commitment and verifies the signature against the current installation key returned by the same JëfPass server.
+
+That is an integrity check, not an independent identity or payment oracle. A public payment status is an issuer-signed snapshot of wallet evidence at issuance, not a live wallet query. Authorized private exports include the invoice, preimage and signed customer action history so the bundle verifier can check available evidence offline.
+
+Obtain the issuer public key through an independent trusted channel and set TRUSTED_ISSUER_PUBLIC_KEY when running the private bundle verifier. Without an independently pinned key, a self-contained signature is internally consistent but does not establish who controls the issuer.
+
+~~~~bash
+npm run verify:bundle -- path/to/private-export.json
+~~~~
+
+Private proof exports can contain customer details, invoices and preimages. Keep them private.
+
+## Security model
+
+- No private wallet spending keys or seed phrases are requested.
+- NWC is receive-only by design and should be provisioned with only the required methods.
+- Invoice creation is reserved before external calls.
+- A preflight failure known to occur before make_invoice dispatch is marked FAILED and may be retried.
+- After make_invoice dispatch begins, a timeout or transport error is UNKNOWN. JëfPass never blindly retries an ambiguous request.
+- Settlement requires wallet-reported incoming status, exact amount and hash, and a matching 32-byte preimage.
+- Customer links are high-entropy, hashed at rest and expiring; signed actions bind the job scope and a one-use nonce.
+- Customer keys prove control of a browser key, not a real-world identity.
+- AI output is a reviewed draft only. AI cannot approve work, sign receipts, set payment state or spend funds.
+
+See [THREAT_MODEL.md](THREAT_MODEL.md). This is a security-conscious prototype, not an independent audit or production certification.
+
+## Scope and non-goals
+
+JëfPass is not a wallet, exchange, escrow, lending service, public rating system, legal identity provider or mobile-money cash-out service. It does not prove physical work quality. It does not claim that a customer signature is a verified identity or that a server receipt signature independently proves a Lightning payment.
+
+The project is MIT licensed. Contributions should preserve the separation between service state and payment state, and should never weaken the conservative UNKNOWN handling.
 
 ## Documentation
 
-- [PROJECT_BRIEF.md](PROJECT_BRIEF.md): audience, scope, five judging criteria, evidence.
-- [ARCHITECTURE.md](ARCHITECTURE.md): storage, state, trust boundaries, signing and backups.
-- [INTEGRATIONS.md](INTEGRATIONS.md): genuine wallets, Nostr, optional AI, verification gates.
-- [THREAT_MODEL.md](THREAT_MODEL.md): threats, controls to verify, residual trust.
-- [DEMO_GUIDE.md](DEMO_GUIDE.md): three-minute run, UI sample, safe reset.
-- [LIMITATIONS.md](LIMITATIONS.md): actual versus remaining work and blocked claims.
-- [PUBLICATION_CHECKLIST.md](PUBLICATION_CHECKLIST.md): release, secrets, public-repo gates.
+- [PROJECT_BRIEF.md](PROJECT_BRIEF.md) — product hypothesis and judging-criteria mapping
+- [ARCHITECTURE.md](ARCHITECTURE.md) — components, API routes and state transitions
+- [INTEGRATIONS.md](INTEGRATIONS.md) — Lightning, Nostr, AI and offline integration contracts
+- [THREAT_MODEL.md](THREAT_MODEL.md) — threats, controls and residual risk
+- [VERIFICATION.md](VERIFICATION.md) — automated and manual evidence
+- [LIMITATIONS.md](LIMITATIONS.md) — current boundaries
+- [DEMO_GUIDE.md](DEMO_GUIDE.md) — safe repeatable demonstration
+- [PUBLICATION_CHECKLIST.md](PUBLICATION_CHECKLIST.md) — release and submission review
 
-The MIT license is in [LICENSE](LICENSE). Open-source intent does not mean a public repository or deployment has already been published.
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -1,76 +1,247 @@
-# Architecture
+# JëfPass Architecture
 
-## Implemented Prototype
+This document describes the current single-instance prototype. It is not a target-state architecture or a security certification.
 
-This describes the implemented single-host app, not a security certification. [VERIFICATION.md](VERIFICATION.md) records 122 passing tests, typecheck, a clean production build, the unpaid browser journey and offline reconnection. There have been 0 genuine wallet settlements and no external NIP-07 signing or relay publication. The original idea's Supabase option and default worker-signed receipt do not describe this implementation.
+## 1. System context
 
-```mermaid
+~~~~mermaid
 flowchart TD
-    W[Worker browser: EN/FR] --> S[Next.js App Router: Node 24 server]
-    C[Customer browser: capability and one-time key] --> S
-    W --> D[IndexedDB: drafts only]
-    S --> DB[Persistent local SQLite]
-    S --> NWC[NWCClient through allowlisted relay]
-    NWC --> RW[Worker receiving wallet]
-    CW[External customer wallet] --> RW
-    S --> R[Ed25519 public receipt and authorized private export]
-    W --> NS[Optional external NIP-07 signer]
-    NS --> NR[Browser publishes minimal Nostr commitment]
-    S --> AI[Optional AI draft endpoint: disabled by default]
-```
+  W[Worker browser] --> APP[Next.js Node application]
+  C[Customer browser] --> APP
+  W --> IDB[IndexedDB: non-financial drafts]
+  APP --> DB[Persistent SQLite]
+  APP --> NWC[NWC client through allowlisted WSS relay]
+  NWC --> WALLET[Worker receiving wallet]
+  PAYER[Customer Lightning wallet] --> WALLET
+  W --> NIP07[External NIP-07 signer]
+  NIP07 --> RELAYS[Public Nostr relays]
+  APP --> VERIFY[Public receipt API]
+  VERIFY --> V[Browser receipt verifier]
+~~~~
 
-## Runtime And Storage
+## 2. Runtime
 
-Next.js TypeScript App Router uses Node-runtime server handlers, not Edge. Node 24 built-in `node:sqlite` persists to `DB_PATH`, default `./data/jefpass.sqlite`. SQLite uses WAL, synchronous FULL, a busy timeout, parameterized queries, and synchronous `BEGIN IMMEDIATE` transactions. JSON documents and rate-limit records live in local tables. One process, one instance, durable writable volume; no serverless ephemeral filesystem, shared network-drive SQLite, or multi-replica promise. Long synchronous queries and document scans can block the process; capacity and restore drills remain unverified.
+- Next.js App Router with TypeScript.
+- Node.js 24 runtime; API routes explicitly use the Node.js runtime.
+- Node built-in SQLite database via node:sqlite.
+- A single application process and one persistent local database file.
+- NWC client adapter using the pinned @getalby/sdk 9.0.0.
+- BOLT11 invoice decoding and validation using bolt11.
+- nostr-tools for event construction and signature verification.
+- idb-keyval for local non-financial drafts.
+- Zod for strict request validation.
 
-Server records include workers, per-password salted scrypt hashes, hashed session identifiers, hashed expiring customer capabilities, signed acknowledgements, payment reservations, wallet identity, and receipts. Sessions expire after 30 days; login/register replaces the presented session. Cookies are HttpOnly, SameSite=Strict, Secure when served over HTTPS. Mutations require matching Origin and `X-Jefpass: 1`, with Fetch Metadata checks; ownership checks and SQLite-backed rate limits guard API access. These controls are implemented, not externally audited.
+This is not compatible with an ephemeral serverless filesystem or multiple independent replicas that each have their own SQLite file. A production deployment needs a single durable instance or a deliberate database migration.
 
-Per-worker NWC URIs use AES-256-GCM with random 12-byte nonces; the key is outside SQLite. `APP_ENCRYPTION_KEY` optionally supplies exactly 32 bytes as hex/base64; otherwise a durable key is generated beside the database, default `data/key`. The current envelope does not provide worker-bound associated data or a versioned key-rotation system. Job details, SQLite WAL/journals, exports, and backups are not encrypted by this control. Use OS disk encryption, restrictive ACLs, and protected backups. Server compromise can expose decrypted credentials and issue false attestations.
+## 3. Application routes
 
-Browser `idb-keyval` stores worker-scoped drafts and queued nonfinancial job creation. Each queued job retains a `clientId`; backend deduplication is scoped to worker plus client ID, returns the existing job on identical retry, and rejects changed terms under the same ID. Flush checks the signed-in owner before sending. This is not an encrypted vault or server backup. No payments or customer signatures are queued. Customer secret keys use `sessionStorage` keyed by `job.id`, separate from drafts. There is no service worker/offline app-shell reload guarantee; the manifest is an install hint only. Photos and upload endpoints are deferred.
+| Route | Purpose |
+|---|---|
+| / | Public English/French landing page |
+| /app | Authenticated worker workspace |
+| /confirm/[token] | Customer quote review and signed actions |
+| /verify/[id] | Public receipt integrity and signer verification |
+| /passport/[id] | Worker-selected public job history |
+| /api/session | Current worker, network and receipt issuer public key |
+| /api/auth/register, /api/auth/login, /api/auth/logout | Account and session lifecycle |
+| /api/profile | Worker profile |
+| /api/jobs | Create and list jobs |
+| /api/jobs/[id] | Owned job detail |
+| /api/jobs/[id]/share | Rotate an expiring customer link |
+| /api/jobs/[id]/complete | Record worker completion |
+| /api/jobs/[id]/invoice | Reserve and create an incoming Lightning invoice |
+| /api/jobs/[id]/reconcile | Look up the original invoice |
+| /api/jobs/[id]/receipt | Issue an immutable receipt snapshot |
+| /api/jobs/[id]/visibility | Opt a completed record into the public passport |
+| /api/customer/[token] | Capability-scoped customer view and signed action |
+| /api/wallet | Connect or disconnect worker NWC |
+| /api/receipts/[id] | Public receipt and verification metadata |
+| /api/receipts/[id]/nostr | Store a verified worker commitment event |
+| /api/passport/[id] | Public worker passport |
+| /api/export | Authorized private proof bundle |
+| /api/ai/draft | Optional job-description draft |
 
-## Routes
+## 4. Persistence and secrets
 
-- `/` is the authenticated workbench; `/confirm/[token]` is customer review/signing, `/verify/[id]` is public receipt verification, and `/passport/[id]` lists explicitly shared completed work.
-- `/api/session`, `/api/auth/register`, `/api/auth/login`, and `/api/auth/logout` handle session/account state; `/api/profile` updates the worker profile.
-- `/api/jobs` creates/lists jobs; `/api/jobs/[id]` reads an owned job. POST actions include `share`, `complete`, `invoice`, `reconcile`, `receipt`, and `visibility`.
-- `/api/customer/[token]` serves the capability-scoped review/challenge and accepts signed actions. `/api/wallet` connects/disconnects the encrypted wallet; `/api/export` is the authorized private export.
-- `/api/receipts/[id]` serves public receipt/signature metadata; `/api/receipts/[id]/nostr` records a checked optional worker event. `/api/passport/[id]` serves shared work. `/api/ai/draft` provides optional reviewed drafts.
+SQLite stores documents grouped by type and identifier, plus rate-limit counters. Transactions use BEGIN IMMEDIATE and synchronous commits. Database writes must remain synchronous; external network operations occur outside database transactions.
 
-## Customer Acknowledgements
+The default database is data/jefpass.sqlite. Runtime files and generated secrets must not be committed. The generated application encryption key and issuer private key live beside the database and must be backed up securely with it.
 
-Capabilities have 256 bits of randomness; only hashes persist, with seven-day expiry. Generating a fresh share link replaces the prior token hash. Treat `/confirm/[token]` as a bearer secret and redact URLs in operator/proxy logs. API responses use a no-referrer policy. Customer accept, acknowledge, and dispute actions use signed kind-27235 Nostr events with job ID, canonical scope hash, action, and one-use nonce. Challenges expire in five minutes; event timestamps must also be within five minutes. Nonce consumption and state mutation occur in one transaction. Acceptance binds the customer's public key for later actions.
+### Wallet credential encryption
 
-The browser refreshes the challenge and compares displayed scope/state before signing. The scope binds job/worker IDs, title, description, category, amount, currency, and due date. A stolen unbound link may be redeemed by an attacker; a technician can also impersonate a customer. Browser-key control is not identity verification. Closing/deleting the signing session can lose the key; later acknowledgement cannot silently substitute another key. There is no general account/key recovery flow for customers.
+New NWC envelopes use AES-256-GCM with a random 12-byte nonce, authentication tag and worker-specific associated data. The version prefix is v1. Binding the ciphertext to the worker ID prevents moving an encrypted wallet record from one worker to another without authentication failure.
 
-## Durable Payment Protocol
+The decryptor retains support for the earlier unversioned envelope so existing installations can read old records. Newly saved wallet credentials use the versioned format. A key rotation and managed recovery workflow is not yet implemented.
 
-1. Authenticate worker and authorize job; freeze expected integer millisatoshis, selected network, worker wallet fingerprint, and operation ID.
-2. In a transaction, reserve invoice creation before any network request; prevent competing requests for that job/operation. Persist a conservative unresolved state through crashes.
-3. Call `NWCClient` once to request `make_invoice`. On response, use `bolt11` to verify signature, exact amount, configured network, expiry, and payment hash consistency before exposing it. Pin wallet identity; do not accept a hash just because it came in the response.
-4. Persist validated invoice, hash, expiry, and operation link before presenting/polling. Customer pays independently; the server never calls a spending method.
-5. Reconcile with `lookup_invoice` for the same invoice/hash and wallet. Require wallet-reported settlement, exact amount and hash consistency, and a valid 32-byte preimage with `SHA256(preimage) == payment_hash`. Only then persist `SETTLED` plus verification evidence atomically.
-6. Timeouts, disconnects, or crashes after reservation leave `UNKNOWN`, not a retriable creation failure. If hash is known, repeat lookup only. If missing, block replacement creation and require operator/wallet reconciliation; there is no safe automatic retry by operation ID unless wallet semantics are actually proven.
+### Database assumptions
 
-The adapter implements these checks with `bolt11` and `NWCClient`; fixture tests do not establish live wallet interoperability. Wallet changes/disconnect are blocked while operations are unresolved. `LIGHTNING_NETWORK` defaults to `regtest`; `testnet`/`signet` require exact wallet `getInfo` network agreement because both share the `tb` invoice prefix. Mainnet is always rejected regardless of flags. Relay selection is exact parsed-URL matching against comma-separated `NWC_ALLOWED_RELAYS`; empty fails closed. Only WSS plus the operator allowlist restrict destinations, not a separate private-address filter.
+- Persistent writable local volume.
+- One active application instance.
+- Local SQLite is not shared across replicas.
+- SQLite database, WAL, journals, exports and backups need operating-system and storage-level protection.
+- Restore procedures must preserve both the database and associated encryption/issuer key files.
 
-Local expiry alone does not turn an accepted hold invoice into `EXPIRED`: it remains `PENDING` until wallet-reported terminal evidence. This unresolved hold-invoice behavior can block wallet changes. Late lookup allows the original expired invoice to be checked and still requires the exact preimage for settlement. Missing-hash ambiguity needs wallet/operator investigation; there is no automatic replacement or general manual-resolution UI.
+## 5. Worker and customer workflow
 
-The pinned `@getalby/sdk` 9.0.0 uses a required npm `postinstall` `patch-package` patch for null envelopes, method correlation and request cleanup. Both ESM/CJS paths are tested and patch reapplication passed. This does not rewrite NIP-47; do not skip the patch.
+~~~~mermaid
+sequenceDiagram
+  participant W as Worker
+  participant A as JëfPass API
+  participant C as Customer browser
+  participant N as NWC wallet
+  participant P as Customer payer wallet
+  W->>A: Create quote
+  A-->>W: Job plus expiring customer capability
+  W->>C: Share confirmation link / QR
+  C->>A: Retrieve exact quote and challenge
+  C->>C: Sign accept event with temporary browser key
+  C->>A: Submit signed acceptance
+  A-->>W: Job is ACCEPTED
+  W->>A: Mark work completed
+  A-->>C: Completion is available to acknowledge
+  C->>A: Submit signed acknowledgement or dispute
+  W->>A: Request Lightning invoice
+  A->>N: get_info, then make_invoice
+  N-->>A: Signed BOLT11 invoice and invoice identity
+  A-->>C: Invoice for payment
+  P->>N: Pay invoice
+  W->>A: Reconcile original invoice
+  A->>N: lookup_invoice(payment_hash)
+  N-->>A: Incoming invoice status and preimage
+  A->>A: Check amount, hash, preimage and settlement time
+  A-->>W: Verified settlement state
+  W->>A: Issue receipt snapshot
+  A-->>W: Signed receipt
+~~~~
 
-## Receipts And Independent Verification
+A customer does not create an account. The customer capability is an expiring bearer secret. A signed event proves control of a browser-generated key, not the customer's legal identity.
 
-Receipt version 1 uses recursive lexicographically sorted object keys, preserved array order, JSON strings/booleans/null, and safe integers only. Unsupported values are rejected. SHA-256 commits to the canonical UTF-8 payload; Ed25519 signs those same bytes. The public payload includes receipt/worker/job IDs, scope hash, amount/currency, service state, issue/completion/acknowledgement timestamps, issuer public key, and payment state, expected millisatoshis, hash, source, network, and verification/settlement timestamps. `preimageVerification` is `SHA256_MATCH` only for checked settled evidence, otherwise `NOT_VERIFIED`. No raw invoice/preimage or full acknowledgement event is in this public receipt.
+## 6. Service state
 
-A receipt can snapshot completed, acknowledged, or disputed work without a payment; receipt issuance is not settlement. The public browser recomputes the canonical commitment and verifies Ed25519 using Web Crypto, then compares the embedded key with the current installation issuer public key from `/api/session`. This is browser-side integrity checking with same-server issuer trust, not an independent key registry or wallet query. Optional attached Nostr events are checked separately. Do not label a server signature a worker signature.
+Service state and payment state are separate.
 
-Authorized `/api/export` includes private jobs, customer events, receipts, worker Nostr attachments, and stored invoice/preimage evidence. It excludes NWC secrets and capability hashes. `npm run verify:bundle -- path/to/private-export.json` checks signatures, scope, customer events and available BOLT11 amount/network/hash/preimage evidence outside the database. Independently pin `TRUSTED_ISSUER_PUBLIC_KEY` for issuer trust. This does not prove payer identity, repair quality or an honest issuer lookup timestamp; direct wallet lookup still requires authorized access.
+### Service state
 
-NIP-07 signing/publication runs in the worker browser. Kind 30078 content is exactly canonical sorted `{commitment,receiptId}` with `tags: [["d", receiptId]]`; no full receipt, invoice, preimage, or customer data is published. No additional commitment salt is implemented. Relays see timing and worker identity and cannot guarantee deletion. Public receipts are accessible by receipt ID independently of passport visibility; do not treat unlisted as private. External signer/publication remain unexercised.
+- QUOTED — worker created the quote.
+- ACCEPTED — customer signed the exact quoted scope.
+- COMPLETED — worker recorded completion.
+- ACKNOWLEDGED — customer signed acknowledgement of completion.
+- DISPUTED — customer signed a dispute action.
 
-## Keys, Backups, And Rotation
+A job can be completed without being paid. A dispute does not erase the historical completion timestamp.
 
-- Issuer: an Ed25519 private key is generated durably beside `DB_PATH` (default `data/issuer-private.pem`). There are no supported receipt issuer environment variables. Losing/replacing it changes current-install issuer trust for old receipts. A historical key registry, managed rotation, and compromise notices are not implemented; distribute/pin public fingerprints separately for independent trust.
-- NWC encryption: preserve the exact configured `APP_ENCRYPTION_KEY` or generated `data/key`. Rotation/migration is an operator task, not an implemented versioned key-management flow. Missing keys means lost connections. Revoke wallet delegations after suspected exposure; server-side deletion alone is insufficient.
-- Backups: stop the app for a consistent database backup or use a supported SQLite online backup mechanism. Never copy a live database without WAL consistency. Encrypt backups and key recovery material, restrict access, and test restoration on an isolated instance. Restore the database and matching installation keys together before serving traffic; this drill has not been completed.
-- Restart: unresolved reservations stay unresolved and reconcile by the original hash. Restore must not trigger `make_invoice` or publish private proof data automatically.
+### Invoice eligibility
+
+Invoice creation is enforced in the service layer, not only in the UI. The job must have a completion timestamp and be in COMPLETED or ACKNOWLEDGED state. It must have customer acceptance. A request made directly against the API cannot bypass this restriction.
+
+### Payment state
+
+- NOT_REQUESTED
+- INVOICE_CREATED
+- PENDING
+- UNKNOWN
+- SETTLED
+- EXPIRED
+- FAILED
+- CANCELLED
+- UNDERPAID
+- OVERPAID
+
+### Payment request boundary
+
+~~~~mermaid
+flowchart TD
+  A[Completed accepted job] --> B[Persist reservation]
+  B --> C[Validate wallet and get_info]
+  C -->|Preflight fails before dispatch| F[FAILED: safe to retry]
+  C -->|Preflight succeeds| D[Dispatch make_invoice]
+  D -->|Valid invoice response| E[INVOICE_CREATED]
+  D -->|Timeout, disconnect or malformed response| U[UNKNOWN: never blindly retry]
+  E --> L[lookup_invoice on original hash]
+  L -->|Pending or hold accepted| P[PENDING]
+  L -->|Exact amount and matching preimage| S[SETTLED]
+  L -->|Expired| X[EXPIRED]
+  L -->|Missing or contradictory evidence| U
+~~~~
+
+The preflight/dispatch boundary is conservative. Once the make_invoice request may have reached the wallet, timeout or transport failure is UNKNOWN. No replacement invoice is created automatically. If the wallet never returns an invoice identity, the operation may need manual wallet/provider investigation.
+
+The server reconciles the original invoice only. Settlement requires:
+- Same worker wallet identity and network as the reserved operation.
+- Original signed BOLT11 invoice.
+- Exact expected integer millisatoshi amount.
+- Incoming invoice record with matching payment hash.
+- Wallet-reported settled status.
+- Valid 32-byte preimage whose SHA-256 equals the payment hash.
+- Plausible settlement timestamp.
+
+NIP-47 marks state optional for compatibility in some wallet services. If state is absent, the adapter accepts settlement only when an authoritative settled_at value and valid preimage are present. Contradictory or unsupported incoming-invoice states remain UNKNOWN.
+
+## 7. Nostr event design
+
+### Customer action proof
+
+JëfPass uses application-specific ephemeral kind 27236 for customer accept, acknowledge and dispute events. The content is a strict JSON object containing job ID, canonical scope hash, action and one-time nonce. Events contain no relay tags and are submitted to the application API; JëfPass does not publish them to relays.
+
+NIP-98 reserves kind 27235 for HTTP authentication, so it must not be reused for customer acknowledgements. Kind 27236 lies in the NIP-01 ephemeral range. This does not make the acknowledgement a globally registered Nostr standard; it is an application-specific protocol contract.
+
+Links expire after seven days. Nonces expire after five minutes and are consumed in the same SQLite transaction as the action state update. Acceptance pins the customer's browser public key for subsequent acknowledgement.
+
+### Worker receipt commitment
+
+The worker may connect an external NIP-07 signer. The signed receipt event uses kind 30078 and contains only the canonical receipt ID and commitment with one d tag. It does not publish the full receipt, customer details, invoice or preimage.
+
+The server validates the event signature, content, d tag and signer key against the worker key at attachment time. It stores the verified signer public key with the attachment so later verification does not silently change identity when the worker profile key is rotated.
+
+## 8. Receipt model
+
+A receipt is an immutable snapshot containing:
+- Receipt ID and issue time.
+- Worker and job IDs.
+- Canonical scope hash.
+- Service state and timestamps.
+- Agreed satoshi amount.
+- Payment state, expected millisatoshis, network, source and payment hash.
+- Application issuer public key.
+- SHA-256 commitment and Ed25519 signature.
+
+The public receipt omits invoice and preimage. An authorized private export includes the original invoice, preimage evidence and signed customer events where available.
+
+### Verification boundaries
+
+The browser verifier recomputes canonical JSON, SHA-256 and Ed25519 signature. It compares the receipt issuer key with the key returned by that same installation's session API. This is an integrity and installation-consistency check, not independently pinned issuer identity.
+
+The private bundle verifier checks the signed receipt, job scope, customer events, worker Nostr attachment and available BOLT11 amount/hash/preimage evidence without a live database. Set TRUSTED_ISSUER_PUBLIC_KEY using a key obtained through an independent trusted channel to pin issuer identity.
+
+Neither the application issuer signature nor the payment preimage proves physical repair quality or real-world identity. A server-signed public settlement snapshot is not a live wallet query.
+
+## 9. Authentication and request security
+
+- Passwords use salted scrypt hashes.
+- Session tokens are random; only their hashes are persisted.
+- Cookies are HttpOnly, SameSite=Strict and Secure on HTTPS.
+- Mutations require matching Origin, a custom X-Jefpass header and same-site Fetch Metadata where provided.
+- Production requires explicit APP_ORIGIN and HTTPS.
+- JSON bodies are streamed and limited to 32 KB.
+- Zod request schemas are strict.
+- Job ownership is checked in service functions.
+- Customer tokens are hashed at rest, scoped and expiring.
+- Rate-limit counters persist in SQLite.
+- NWC URI secrets are encrypted at rest and tied to the worker ID with authenticated data.
+
+Residual risks include a trusted single application host, plaintext job data and SQLite WAL on disk, customer-browser key loss, public metadata correlation, and missing independent security review.
+
+## 10. Deployment constraints
+
+Before deployment:
+1. Use Node.js 24.x.
+2. Set APP_ORIGIN to the exact HTTPS browser-facing origin.
+3. Use persistent storage and a single instance.
+4. Preserve the SQLite database, encryption key and issuer key together.
+5. Restrict filesystem permissions and use encrypted backups.
+6. Configure exact trusted WSS relays for NWC.
+7. Leave mainnet disabled.
+8. Run npm ci, tests, typecheck, production build and dependency audit.
+9. Test a genuine external test-network wallet payment before making a live-payment claim.
+
+See README.md, INTEGRATIONS.md, THREAT_MODEL.md and PUBLICATION_CHECKLIST.md.
