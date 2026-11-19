@@ -16,22 +16,25 @@
   },
   "dependencies": {
     "@getalby/sdk": "9.0.0",
-    "bolt11": "latest",
-    "idb-keyval": "latest",
-    "lucide-react": "latest",
-    "next": "latest",
-    "nostr-tools": "latest",
-    "qrcode.react": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "zod": "latest"
+    "bolt11": "1.4.2",
+    "idb-keyval": "6.3.0",
+    "lucide-react": "1.76.0",
+    "next": "16.4.6",
+    "nostr-tools": "2.26.1",
+    "qrcode.react": "4.2.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "patch-package": "^8.0.1",
-    "typescript": "latest",
-    "vitest": "latest"
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "patch-package": "8.0.1",
+    "typescript": "7.0.2",
+    "vitest": "5.1.1"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25"
   }
 }

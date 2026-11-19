@@ -152,6 +152,8 @@ describe("customer capabilities and service state", () => {
     const { job, token } = createJob(owner.id, draft);
     const { challenge } = getCustomer(token);
     expect(() => customerAction(token, { action: "accept", event: signed(challenge, secret, Math.floor(Date.now() / 1000) - 301) })).toThrow("five-minute");
+    const nip98 = finalizeEvent({ kind: 27235, created_at: Math.floor(Date.now() / 1000), tags: [], content: JSON.stringify(challenge) }, secret);
+    expect(() => customerAction(token, { action: "accept", event: nip98 })).toThrow("signature or kind");
     const forged = { ...signed(challenge), sig: "0".repeat(128) };
     expect(() => customerAction(token, { action: "accept", event: forged })).toThrow("signature");
     expect(() => customerAction(token, { action: "accept", event: signed({ ...challenge, scopeHash: "0".repeat(64) }) })).toThrow("mismatched");
@@ -257,11 +259,28 @@ describe("receipts and public privacy", () => {
     expect(attachNostrReceipt(worker, receipt.id, { event, relays: ["wss://relay.example.test"] }).event.id).toBe(event.id);
     expect(readDocument("receiptNostr", receipt.id)).toBeDefined();
     expect(verifyReceipt(receipt).workerSignature?.valid).toBe(true);
+    expect(verifyReceipt(receipt).workerSignature?.publicKey).toBe(getPublicKey(secret));
+    const attachment = readDocument<{ event: unknown; relays: string[]; workerPubkey?: string }>("receiptNostr", receipt.id)!;
+    writeDocument("receiptNostr", receipt.id, { ...attachment, workerPubkey: getPublicKey(generateSecretKey()) });
+    expect(verifyReceipt(receipt).workerSignature?.valid).toBe(false);
     expect(verifyReceipt({ ...receipt, amountSats: 10 }).workerSignature?.valid).toBe(false);
   });
 });
 
 describe("durable invoice reservation without external API calls", () => {
+  it("allows a new invoice attempt only after a confirmed preflight failure with no invoice identity", () => {
+    const { job } = acceptedJob(other.id);
+    completeJob(other.id, job.id);
+    writeDocument("wallets", other.id, { encryptedUri: encryptWallet("nostr+walletconnect://test-only", other.id), fingerprint: "wallet-one", source: "NWC", network: "regtest" });
+    const updated = ownedJob(other.id, job.id);
+    updated.payment = { state: "FAILED", operationId: "known-preflight-failure", source: "NWC", network: "regtest",
+      walletFingerprint: "wallet-one", expectedMsat: draft.amountSats * 1000, error: "Preflight failed before dispatch" };
+    writeDocument("jobs", job.id, updated);
+    const retry = reserveInvoice(other.id, job.id);
+    expect(retry.wallet).not.toBeNull();
+    expect(retry.job.payment?.state).toBe("UNKNOWN");
+    expect(retry.job.payment?.operationId).not.toBe("known-preflight-failure");
+  });
   it("reserves UNKNOWN once, survives a crash, never reissues and blocks wallet changes", async () => {
     const { job } = acceptedJob(other.id);
     completeJob(other.id, job.id);

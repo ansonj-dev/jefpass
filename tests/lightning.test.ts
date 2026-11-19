@@ -83,6 +83,38 @@ describe("authoritative settlement checks using fixture wallet responses only", 
     expect(assessSettlement(old, { ...settled(), state: "accepted", settled_at: undefined }).state).toBe("PENDING");
     expect(assessSettlement(old, { ...settled(), state: "expired", settled_at: undefined }).state).toBe("EXPIRED");
   });
+  it("classifies get_info failure as a safe pre-dispatch failure", async () => {
+    const reserved = { ...payment(), state: "UNKNOWN" as const, invoice: undefined, paymentHash: undefined };
+    const wallet = client({});
+    vi.mocked(wallet.getInfo).mockRejectedValueOnce(new Error("relay unavailable"));
+    const result = await createInvoice(uri, reserved, () => wallet);
+    expect(result.state).toBe("FAILED");
+    expect(result.error).toContain("before make_invoice was sent");
+    expect(wallet.makeInvoice).not.toHaveBeenCalled();
+    expect(wallet.close).toHaveBeenCalled();
+  });
+  it("keeps make_invoice transport failures UNKNOWN after dispatch", async () => {
+    const reserved = { ...payment(), state: "UNKNOWN" as const, invoice: undefined, paymentHash: undefined };
+    const wallet = client({});
+    vi.mocked(wallet.makeInvoice).mockRejectedValueOnce(new Error("relay disconnected"));
+    const result = await createInvoice(uri, reserved, () => wallet);
+    expect(result.state).toBe("UNKNOWN");
+    expect(result.error).toContain("Do not retry");
+    expect(wallet.makeInvoice).toHaveBeenCalledOnce();
+  });
+  it("does not dispatch make_invoice after the preflight timeout", async () => {
+    vi.useFakeTimers();
+    const reserved = { ...payment(), state: "UNKNOWN" as const, invoice: undefined, paymentHash: undefined };
+    const wallet = client({});
+    let resolveInfo!: (value: { network: string; methods: string[] }) => void;
+    vi.mocked(wallet.getInfo).mockReturnValueOnce(new Promise(resolve => { resolveInfo = resolve; }));
+    const pending = createInvoice(uri, reserved, () => wallet);
+    await vi.advanceTimersByTimeAsync(20000);
+    resolveInfo({ network: "regtest", methods });
+    const result = await pending;
+    expect(result.state).toBe("FAILED");
+    expect(wallet.makeInvoice).not.toHaveBeenCalled();
+  });
   it("creates an invoice through the SDK interface and preserves its identity", async () => {
     const reserved = { ...payment(), state: "UNKNOWN" as const, invoice: undefined, paymentHash: undefined };
     const wallet = client({ ...settled(), state: "pending", invoice: fixtureInvoice() });
