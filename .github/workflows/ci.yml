@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      APP_ORIGIN: https://jefpass.example
       LIGHTNING_NETWORK: regtest
       NWC_ALLOWED_RELAYS: wss://relay.example.test/
       AI_ENABLED: "false"
