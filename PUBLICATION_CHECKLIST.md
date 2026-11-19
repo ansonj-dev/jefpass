@@ -9,8 +9,9 @@ Use this checklist before any public release or hackathon submission. A checked 
 - [x] Main branch contains source and documentation.
 - [x] Dependencies are pinned to the lockfile versions.
 - [x] GitHub Actions CI is configured for main and pull requests.
-- [x] GitHub Actions passed 127 tests, typecheck, production build and the configured dependency-audit gate on 19 November 2026.
-- [ ] Confirm the final documentation-only commit also has a green CI run.
+- [x] GitHub Actions passed 128 tests across 9 files, typecheck, production build and the configured dependency-audit gate on 19 November 2026.
+- [x] The source-code follow-up commit `5e2d340c83d2412591ab9aea5457fc51f94d5a92` passed its GitHub Actions run.
+- [ ] Confirm this final verification-report documentation commit also has a green CI run.
 - [ ] Confirm a fresh-machine npm ci installation and postinstall patch on a developer workstation.
 - [ ] Review final commit history, screenshots, video and archive for secrets and customer data.
 

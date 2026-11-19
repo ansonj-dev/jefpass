@@ -3,8 +3,8 @@
 **Updated:** 19 November 2026  
 **Repository:** https://github.com/ansonj-dev/jefpass  
 **Verification environment:** GitHub Actions, Ubuntu runner, Node.js 24.22.2, npm 11.19.1  
-**Code verification commit:** `2d76d600fbe2e324c692d09f0123f343b9322968`  
-**Workflow run:** https://github.com/ansonj-dev/jefpass/actions/runs/44562713283
+**Code verification commit:** `5e2d340c83d2412591ab9aea5457fc51f94d5a92`  
+**Workflow run:** https://github.com/ansonj-dev/jefpass/actions/runs/44564266385
 
 ## Automated CI result
 
@@ -13,22 +13,22 @@
 GitHub Actions successfully completed all configured steps on 19 November 2026:
 
 - `npm ci`: passed. The pinned `@getalby/sdk@9.0.0` postinstall patch applied.
-- `npm test`: **127 tests passed across 9 test files**.
+- `npm test`: **128 tests passed across 9 test files**.
 - `npm run typecheck`: passed.
 - `npm run build`: passed. Next.js compiled and generated the application routes.
 - `npm audit --omit=dev --audit-level=moderate`: passed the configured threshold.
 
 The dependency audit still reports **3 low-severity vulnerabilities** in the existing Lightning invoice dependency chain. The CI gate is set to fail on moderate or higher severity. This is not a statement that the dependency graph has zero advisories. Do not use `npm audit fix --force` without reviewing the breaking-change implications.
 
-The CI run validates the code at the code verification commit above. Subsequent commits in this documentation update do not change application source code; the final documentation commit still triggers its own CI run.
+The code verification commit above passed GitHub Actions on 19 November 2026. The workflow ran `npm ci`, tests, typecheck, production build and `npm audit --omit=dev --audit-level=moderate`; all steps completed successfully. This verification-report edit is documentation-only and triggers another CI run.
 
 ## Test coverage
 
-The 127-test suite covers:
+The 128-test suite covers:
 
 | Test file / slice | Passing tests | Boundary |
 |---|---:|---|
-| Backend and authorization | 22 | SQLite, account/session handling, ownership, customer proofs, receipts, HTTP guards and wallet encryption |
+| Backend and authorization | 23 | SQLite, account/session handling, ownership, customer proofs, receipts, HTTP guards and wallet encryption |
 | Browser/client cryptography | 25 | Canonical receipt hash, Ed25519, tampering and Nostr receipt-event verification |
 | SDK response handling | 52 | ESM/CJS envelope validation, method correlation, malformed responses and cleanup with stubbed transport |
 | Lightning adapter | 15 | Signed fixture invoices, amount/network/hash/preimage checks, preflight/dispatch failures and UNKNOWN reconciliation |

@@ -49,7 +49,7 @@ Customer proofs use JëfPass ephemeral kind 27236. NIP-98 reserves kind 27235 fo
 
 ## Evidence and honest boundaries
 
-- GitHub Actions on main has passed 127 automated tests across 9 test files, typecheck, production build and the configured production-dependency audit gate.
+- GitHub Actions on main has passed 128 automated tests across 9 test files, typecheck, production build and the configured production-dependency audit gate.
 - A locally exercised unpaid worker-to-customer-to-receipt browser journey is documented in VERIFICATION.md.
 - Automated tests exercise signatures, state transitions, invoice validation and mocked wallet-response handling.
 - The recorded verification evidence reports zero genuine external wallet settlements.
