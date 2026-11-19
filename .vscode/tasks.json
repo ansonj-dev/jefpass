@@ -1,0 +1,33 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "JefPass development server",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"dev",
+				"--",
+				"--port",
+				"3000"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "JefPass production server",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"run",
+				"start",
+				"--",
+				"--port",
+				"3100"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

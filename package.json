@@ -1,0 +1,37 @@
+{
+  "name": "jefpass",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "setup": "npm install",
+    "demo:seed": "node scripts/seed-demo.mjs",
+    "verify:bundle": "node scripts/verify-bundle.mjs",
+    "postinstall": "patch-package"
+  },
+  "dependencies": {
+    "@getalby/sdk": "9.0.0",
+    "bolt11": "latest",
+    "idb-keyval": "latest",
+    "lucide-react": "latest",
+    "next": "latest",
+    "nostr-tools": "latest",
+    "qrcode.react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "patch-package": "^8.0.1",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "JefPass",
+  "short_name": "JefPass",
+  "description": "Your work, on the record.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f8f7",
+  "theme_color": "#075e49",
+  "lang": "en",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

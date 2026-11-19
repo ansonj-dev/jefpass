@@ -1,0 +1,18 @@
+[
+  {
+    "title": "DEMO SEED - Laptop screen and battery repair",
+    "description": "Replace the damaged screen and worn battery. Return the old parts to the customer. This is sample scope, not completed work.",
+    "category": "repair",
+    "amountSats": 1000,
+    "currency": "SAT",
+    "clientId": "jefpass-demo-laptop-v1"
+  },
+  {
+    "title": "DEMO SEED - Phone charging-port inspection",
+    "description": "Inspect the charging port and agree on any replacement before starting. Sample quote only.",
+    "category": "repair",
+    "amountSats": 500,
+    "currency": "SAT",
+    "clientId": "jefpass-demo-phone-v1"
+  }
+]

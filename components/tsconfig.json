@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": [
+    "./**/*.tsx",
+    "../app/layout.tsx",
+    "../app/page.tsx",
+    "../app/confirm/**/*.tsx",
+    "../app/verify/**/*.tsx",
+    "../app/passport/**/*.tsx",
+    "../lib/client.ts",
+    "../lib/i18n.ts",
+    "../lib/offline.ts"
+  ],
+  "exclude": ["../node_modules", "../.next"]
+}

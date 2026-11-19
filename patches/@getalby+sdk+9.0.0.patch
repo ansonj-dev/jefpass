@@ -1,0 +1,446 @@
+diff --git a/node_modules/@getalby/sdk/dist/cjs/nwc.cjs b/node_modules/@getalby/sdk/dist/cjs/nwc.cjs
+index 9785737..de98891 100644
+--- a/node_modules/@getalby/sdk/dist/cjs/nwc.cjs
++++ b/node_modules/@getalby/sdk/dist/cjs/nwc.cjs
+@@ -7541,7 +7541,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request get_info", error);
++            console.error("Failed to request get_info");
+             throw error;
+         }
+     }
+@@ -7551,7 +7551,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request get_budget", error);
++            console.error("Failed to request get_budget");
+             throw error;
+         }
+     }
+@@ -7561,7 +7561,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request get_balance", error);
++            console.error("Failed to request get_balance");
+             throw error;
+         }
+     }
+@@ -7574,7 +7574,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request pay_invoice", error);
++            console.error("Failed to request pay_invoice");
+             throw error;
+         }
+     }
+@@ -7585,7 +7585,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request pay_keysend", error);
++            console.error("Failed to request pay_keysend");
+             throw error;
+         }
+     }
+@@ -7595,7 +7595,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request sign_message", error);
++            console.error("Failed to request sign_message");
+             throw error;
+         }
+     }
+@@ -7605,7 +7605,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request create_connection", error);
++            console.error("Failed to request create_connection");
+             throw error;
+         }
+     }
+@@ -7616,7 +7616,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request make_invoice", error);
++            console.error("Failed to request make_invoice");
+             throw error;
+         }
+     }
+@@ -7630,7 +7630,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request make_hold_invoice", error);
++            console.error("Failed to request make_hold_invoice");
+             throw error;
+         }
+     }
+@@ -7640,7 +7640,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request settle_hold_invoice", error);
++            console.error("Failed to request settle_hold_invoice");
+             throw error;
+         }
+     }
+@@ -7650,7 +7650,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request cancel_hold_invoice", error);
++            console.error("Failed to request cancel_hold_invoice");
+             throw error;
+         }
+     }
+@@ -7660,7 +7660,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request lookup_invoice", error);
++            console.error("Failed to request lookup_invoice");
+             throw error;
+         }
+     }
+@@ -7671,7 +7671,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request list_transactions", error);
++            console.error("Failed to request list_transactions");
+             throw error;
+         }
+     }
+@@ -7746,54 +7746,62 @@ class NWCClient {
+                     content: encryptedCommand,
+                 };
+                 const event = await this.signEvent(eventTemplate);
++                let replyTimeoutCheck;
++                let publishTimeoutCheck;
++                let sub;
++                function cleanup() {
++                  clearTimeout(replyTimeoutCheck);
++                  clearTimeout(publishTimeoutCheck);
++                  sub?.close();
++                }
+                 // subscribe to NIP_47_SUCCESS_RESPONSE_KIND and NIP_47_ERROR_RESPONSE_KIND
+                 // that reference the request event (NIP_47_REQUEST_KIND)
+-                const sub = this.pool.subscribe(this.relayUrls, {
++                sub = this.pool.subscribe(this.relayUrls, {
+                     kinds: [23195],
+                     authors: [this.walletPubkey],
+                     "#e": [event.id],
+                 }, {
+                     onevent: async (event) => {
+-                        // console.log(`Received reply event: `, event);
+-                        clearTimeout(replyTimeoutCheck);
+-                        sub.close();
++                        try {
++                        cleanup();
+                         let response;
+                         try {
+-                            const decryptedContent = await this.decrypt(this.walletPubkey, event.content);
+-                            // console.log(`Decrypted content: `, decryptedContent);
+-                            response = JSON.parse(decryptedContent);
+-                        }
+-                        catch (e) {
+-                            reject(new Nip47ResponseDecodingError("failed to deserialize response", "INTERNAL"));
+-                            return;
+-                        }
+-                        if (response.result) {
+-                            if (resultValidator(response.result)) {
+-                                resolve(response.result);
++                          const decryptedContent = await this.decrypt(this.walletPubkey, event.content);
++                          response = JSON.parse(decryptedContent);
+                             }
+-                            else {
+-                                reject(new Nip47ResponseValidationError("response from NWC failed validation: " +
+-                                    JSON.stringify(response.result), "INTERNAL"));
++                        catch (error) {
++                          throw new Nip47ResponseDecodingError("failed to deserialize response", "INTERNAL");
+                             }
++                        if (!response || typeof response !== "object" || Array.isArray(response) ||
++                          response.result_type !== nip47Method ||
++                          (Object.hasOwn(response, "result") === !!response.error)) {
++                          throw new Nip47ResponseValidationError("invalid NWC response envelope", "INTERNAL");
++                        }
++                        if (response.error) {
++                          throw new Nip47WalletError(response.error?.message || "unknown Error", response.error?.code || "INTERNAL");
+                         }
+-                        else {
+-                            // console.error("Wallet error", response.error);
+-                            reject(new Nip47WalletError(response.error?.message || "unknown Error", response.error?.code || "INTERNAL"));
++                        if (!resultValidator(response.result)) {
++                          throw new Nip47ResponseValidationError("response from NWC failed validation", "INTERNAL");
++                        }
++                        resolve(response.result);
++                        }
++                      catch (error) {
++                        reject(error);
+                         }
+                     },
+                 });
+                 function replyTimeout() {
+-                    sub.close();
++                    cleanup();
+                     //console.error(`Reply timeout: event ${event.id} `);
+                     reject(new Nip47ReplyTimeoutError(`reply timeout: event ${event.id}`, "INTERNAL"));
+                 }
+-                const replyTimeoutCheck = setTimeout(replyTimeout, timeoutValues?.replyTimeout || 60000);
++                replyTimeoutCheck = setTimeout(replyTimeout, timeoutValues?.replyTimeout || 60000);
+                 function publishTimeout() {
+-                    sub.close();
++                  cleanup();
+                     //console.error(`Publish timeout: event ${event.id}`);
+                     reject(new Nip47PublishTimeoutError(`publish timeout: ${event.id}`, "INTERNAL"));
+                 }
+-                const publishTimeoutCheck = setTimeout(publishTimeout, this.pool.publishTimeout);
++                publishTimeoutCheck = setTimeout(publishTimeout, this.pool.publishTimeout);
+                 const relayErrors = [];
+                 try {
+                     await Promise.any(this.pool.publish(this.relayUrls, event).map((publishPromise, i) => publishPromise.catch((error) => {
+@@ -7806,11 +7814,11 @@ class NWCClient {
+                     clearTimeout(publishTimeoutCheck);
+                 }
+                 catch (error) {
+-                    clearTimeout(publishTimeoutCheck);
++                  cleanup();
+                     reject(new Nip47PublishError("failed to publish: " +
+                         relayErrors.map((e) => `${e.url}: ${e.reason}`).join("; "), "INTERNAL", relayErrors));
+                 }
+-            })();
++            })().catch(reject);
+         });
+     }
+     async _checkConnected() {
+diff --git a/node_modules/@getalby/sdk/dist/esm/nwc.js b/node_modules/@getalby/sdk/dist/esm/nwc.js
+index 4c5a7ff..2e6b87b 100644
+--- a/node_modules/@getalby/sdk/dist/esm/nwc.js
++++ b/node_modules/@getalby/sdk/dist/esm/nwc.js
+@@ -7539,7 +7539,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request get_info", error);
++            console.error("Failed to request get_info");
+             throw error;
+         }
+     }
+@@ -7549,7 +7549,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request get_budget", error);
++            console.error("Failed to request get_budget");
+             throw error;
+         }
+     }
+@@ -7559,7 +7559,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request get_balance", error);
++            console.error("Failed to request get_balance");
+             throw error;
+         }
+     }
+@@ -7572,7 +7572,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request pay_invoice", error);
++            console.error("Failed to request pay_invoice");
+             throw error;
+         }
+     }
+@@ -7583,7 +7583,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request pay_keysend", error);
++            console.error("Failed to request pay_keysend");
+             throw error;
+         }
+     }
+@@ -7593,7 +7593,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request sign_message", error);
++            console.error("Failed to request sign_message");
+             throw error;
+         }
+     }
+@@ -7603,7 +7603,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request create_connection", error);
++            console.error("Failed to request create_connection");
+             throw error;
+         }
+     }
+@@ -7614,7 +7614,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request make_invoice", error);
++            console.error("Failed to request make_invoice");
+             throw error;
+         }
+     }
+@@ -7628,7 +7628,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request make_hold_invoice", error);
++            console.error("Failed to request make_hold_invoice");
+             throw error;
+         }
+     }
+@@ -7638,7 +7638,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request settle_hold_invoice", error);
++            console.error("Failed to request settle_hold_invoice");
+             throw error;
+         }
+     }
+@@ -7648,7 +7648,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request cancel_hold_invoice", error);
++            console.error("Failed to request cancel_hold_invoice");
+             throw error;
+         }
+     }
+@@ -7658,7 +7658,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request lookup_invoice", error);
++            console.error("Failed to request lookup_invoice");
+             throw error;
+         }
+     }
+@@ -7669,7 +7669,7 @@ class NWCClient {
+             return result;
+         }
+         catch (error) {
+-            console.error("Failed to request list_transactions", error);
++            console.error("Failed to request list_transactions");
+             throw error;
+         }
+     }
+@@ -7744,54 +7744,62 @@ class NWCClient {
+                     content: encryptedCommand,
+                 };
+                 const event = await this.signEvent(eventTemplate);
++                let replyTimeoutCheck;
++                let publishTimeoutCheck;
++                let sub;
++                function cleanup() {
++                  clearTimeout(replyTimeoutCheck);
++                  clearTimeout(publishTimeoutCheck);
++                  sub?.close();
++                }
+                 // subscribe to NIP_47_SUCCESS_RESPONSE_KIND and NIP_47_ERROR_RESPONSE_KIND
+                 // that reference the request event (NIP_47_REQUEST_KIND)
+-                const sub = this.pool.subscribe(this.relayUrls, {
++                sub = this.pool.subscribe(this.relayUrls, {
+                     kinds: [23195],
+                     authors: [this.walletPubkey],
+                     "#e": [event.id],
+                 }, {
+                     onevent: async (event) => {
+-                        // console.log(`Received reply event: `, event);
+-                        clearTimeout(replyTimeoutCheck);
+-                        sub.close();
++                        try {
++                        cleanup();
+                         let response;
+                         try {
+-                            const decryptedContent = await this.decrypt(this.walletPubkey, event.content);
+-                            // console.log(`Decrypted content: `, decryptedContent);
+-                            response = JSON.parse(decryptedContent);
+-                        }
+-                        catch (e) {
+-                            reject(new Nip47ResponseDecodingError("failed to deserialize response", "INTERNAL"));
+-                            return;
+-                        }
+-                        if (response.result) {
+-                            if (resultValidator(response.result)) {
+-                                resolve(response.result);
++                          const decryptedContent = await this.decrypt(this.walletPubkey, event.content);
++                          response = JSON.parse(decryptedContent);
+                             }
+-                            else {
+-                                reject(new Nip47ResponseValidationError("response from NWC failed validation: " +
+-                                    JSON.stringify(response.result), "INTERNAL"));
++                        catch (error) {
++                          throw new Nip47ResponseDecodingError("failed to deserialize response", "INTERNAL");
+                             }
++                        if (!response || typeof response !== "object" || Array.isArray(response) ||
++                          response.result_type !== nip47Method ||
++                          (Object.hasOwn(response, "result") === !!response.error)) {
++                          throw new Nip47ResponseValidationError("invalid NWC response envelope", "INTERNAL");
++                        }
++                        if (response.error) {
++                          throw new Nip47WalletError(response.error?.message || "unknown Error", response.error?.code || "INTERNAL");
+                         }
+-                        else {
+-                            // console.error("Wallet error", response.error);
+-                            reject(new Nip47WalletError(response.error?.message || "unknown Error", response.error?.code || "INTERNAL"));
++                        if (!resultValidator(response.result)) {
++                          throw new Nip47ResponseValidationError("response from NWC failed validation", "INTERNAL");
++                        }
++                        resolve(response.result);
++                        }
++                      catch (error) {
++                        reject(error);
+                         }
+                     },
+                 });
+                 function replyTimeout() {
+-                    sub.close();
++                    cleanup();
+                     //console.error(`Reply timeout: event ${event.id} `);
+                     reject(new Nip47ReplyTimeoutError(`reply timeout: event ${event.id}`, "INTERNAL"));
+                 }
+-                const replyTimeoutCheck = setTimeout(replyTimeout, timeoutValues?.replyTimeout || 60000);
++                replyTimeoutCheck = setTimeout(replyTimeout, timeoutValues?.replyTimeout || 60000);
+                 function publishTimeout() {
+-                    sub.close();
++                  cleanup();
+                     //console.error(`Publish timeout: event ${event.id}`);
+                     reject(new Nip47PublishTimeoutError(`publish timeout: ${event.id}`, "INTERNAL"));
+                 }
+-                const publishTimeoutCheck = setTimeout(publishTimeout, this.pool.publishTimeout);
++                publishTimeoutCheck = setTimeout(publishTimeout, this.pool.publishTimeout);
+                 const relayErrors = [];
+                 try {
+                     await Promise.any(this.pool.publish(this.relayUrls, event).map((publishPromise, i) => publishPromise.catch((error) => {
+@@ -7804,11 +7812,11 @@ class NWCClient {
+                     clearTimeout(publishTimeoutCheck);
+                 }
+                 catch (error) {
+-                    clearTimeout(publishTimeoutCheck);
++                  cleanup();
+                     reject(new Nip47PublishError("failed to publish: " +
+                         relayErrors.map((e) => `${e.url}: ${e.reason}`).join("; "), "INTERNAL", relayErrors));
+                 }
+-            })();
++            })().catch(reject);
+         });
+     }
+     async _checkConnected() {

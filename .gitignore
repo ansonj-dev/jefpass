@@ -1,0 +1,13 @@
+node_modules/
+.next/
+.env*
+!.env.example
+data/
+*.tsbuildinfo
+coverage/
+test-results/
+playwright-report/
+*.pem
+*.key
+*.bak
+*private-export*.json
