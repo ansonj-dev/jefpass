@@ -106,8 +106,11 @@ export function ReceiptVerification() {
         const checks = await verifyReceiptInBrowser(record.receipt);
         const session = await api<Session>("/api/session").catch(() => null);
         const trustedIssuer = session?.receiptPublicKey ? record.receipt.issuer.type === "server" && record.receipt.issuer.algorithm === "Ed25519" && record.receipt.issuer.publicKey === session.receiptPublicKey : null;
-        const event = record.verification.workerSignature?.event;
-        const workerSignature = event ? checks.commitmentValid && verifyReceiptEvent(event, record.receipt) : null;
+        const workerRecord = record.verification.workerSignature;
+        const event = workerRecord?.event;
+        const workerSignature = event && workerRecord?.publicKey
+          ? checks.commitmentValid && verifyReceiptEvent(event, record.receipt, workerRecord.publicKey)
+          : event ? false : null;
         if (current) setBrowser({ ...checks, trustedIssuer, workerSignature });
       } catch (error) { if (current) setBrowserError(errorMessage(error)); }
     }

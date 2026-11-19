@@ -19,7 +19,7 @@ export interface Receipt {
 }
 
 export interface ReceiptVerificationRecord {
-  workerSignature: { event: Event; relays: string[]; valid: boolean; meaning: string } | null;
+  workerSignature: { event: Event; relays: string[]; valid: boolean; publicKey?: string | null; meaning: string } | null;
   [key: string]: unknown;
 }
 

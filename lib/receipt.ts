@@ -23,7 +23,7 @@ export interface ReceiptPayload {
     verifiedAt: string | null; settledAt: number | null };
 }
 export interface Receipt extends ReceiptPayload { commitment: string; signature: string }
-type NostrAttachment = { event: ReturnType<typeof verifiedNostrEvent>; relays: string[] };
+type NostrAttachment = { event: ReturnType<typeof verifiedNostrEvent>; relays: string[]; workerPubkey?: string };
 
 function issuerKey() {
   return createPrivateKey(installSecret("issuer-private.pem", () => {
@@ -76,11 +76,15 @@ export function verifyReceipt(receipt: Receipt) {
   } catch { signatureValid = false; }
   const trustedIssuer = receipt.issuer?.publicKey === receiptPublicKey() && receipt.issuer?.type === "server" && receipt.issuer?.algorithm === "Ed25519";
   const attachment = readDocument<NostrAttachment>("receiptNostr", receipt.id);
+  const worker = readDocument<Worker>("workers", receipt.workerId);
+  const workerPubkey = attachment?.workerPubkey ?? worker?.pubkey ?? null;
   let workerSignatureValid = false;
   if (attachment) {
     try {
       const event = verifiedNostrEvent(attachment.event, 30078);
-      workerSignatureValid = commitmentValid && event.content === receiptCommitment(receipt);
+      workerSignatureValid = commitmentValid && !!workerPubkey && event.pubkey === workerPubkey &&
+        event.content === receiptCommitment(receipt) && event.tags.length === 1 &&
+        event.tags[0].length === 2 && event.tags[0][0] === "d" && event.tags[0][1] === receipt.id;
     } catch { workerSignatureValid = false; }
   }
   return {
@@ -88,7 +92,7 @@ export function verifyReceipt(receipt: Receipt) {
     signatureValid, commitmentValid, trustedIssuer,
     issuer: "Application server, not the worker or customer. A worker Nostr attachment is verified separately.",
     settlement: "Payment status is a server snapshot of wallet evidence at issuance, not an independent proof of Lightning settlement. Service completion and customer acknowledgement do not prove payment.",
-    workerSignature: attachment ? { valid: workerSignatureValid, ...attachment,
+    workerSignature: attachment ? { valid: workerSignatureValid, publicKey: workerPubkey, ...attachment,
       meaning: "Optional worker signature over the receipt commitment only. The worker key was checked when attached; this does not independently prove service delivery or payment." } : null,
   };
 }
@@ -117,7 +121,7 @@ export function attachNostrReceipt(worker: Worker, id: string, input: unknown) {
         event.tags.length !== 1 || event.tags[0].length !== 2 || event.tags[0][0] !== "d" || event.tags[0][1] !== receipt.id) {
       throw new ApiError(400, "Worker signature, minimal commitment and d tag naming receipt are required");
     }
-    writeDocument("receiptNostr", id, { event, relays: data.relays });
+    writeDocument("receiptNostr", id, { event, relays: data.relays, workerPubkey: worker.pubkey });
     return { event, relays: data.relays };
   });
 }
