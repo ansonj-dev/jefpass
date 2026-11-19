@@ -1,44 +1,69 @@
-# Limitations
+# JëfPass Limitations
 
-## Actual Versus Remaining
+This file separates implemented behavior from unverified claims and future work.
 
-The full Next.js prototype is implemented, not just a scaffold. [VERIFICATION.md](VERIFICATION.md) records 122 passing tests, typecheck, clean production build, unpaid browser journey, independent export verification and offline reconnection. External wallet settlement remains blocked.
+## Current evidence
 
-| Area | Actual evidence | Remaining gate |
-| --- | --- | --- |
-| Local app | Browser-tested account-to-customer-to-unpaid-receipt workflow | Capacity/restore tests, deployment hardening |
-| Authentication/privacy | Salted scrypt, hashed sessions/capabilities, ownership/origin checks, encrypted NWC storage | External security review; managed secret rotation and recovery |
-| Customer consent | Signed accept/acknowledge/dispute, five-minute nonces, seven-day links, job-scoped browser keys | Real usability/session-loss testing; not identity verification |
-| Lightning | Receive-only NWC adapters, durable reservations, BOLT11 validation, lookup and mandatory preimage | Credentials/lab unavailable; 0 genuine wallet settlements |
-| Receipt/Nostr | Canonical Ed25519 snapshots, private export, browser verification, optional minimal NIP-07 event path | External signer and relay publication unexercised; no independent public wallet query |
-| Offline/EN/FR | Browser checked at 390px; one queued draft synchronized once | Physical-device/slow-network tests; no service-worker offline app shell |
-| Optional AI | Authenticated strict-schema draft endpoint with local fallback, fixture tests | No paid calls; live model compatibility/quality not validated |
-| Photos | Deferred | No upload endpoint or photo-storage workflow |
-| Research/release | MIT-licensed source and project/judging documentation | No interviews, measured pilot, deployment, or public Git repository publication completed |
+| Area | Implemented | Not yet established |
+|---|---|---|
+| Worker workflow | Account, profile, quote, customer link, completion and receipt | Real technician adoption or retention |
+| Customer acknowledgement | Signed accept, acknowledge and dispute events | Legal identity or non-repudiation against a colluding technician |
+| Lightning | NWC adapter, BOLT11 validation, invoice reservation, reconciliation and preimage checks | Genuine external wallet settlement in the recorded verification evidence |
+| Receipt | Canonical hash, server Ed25519 signature, public verifier, private export | Independent issuer identity without key pinning, live wallet lookup or physical work quality |
+| Nostr | Customer event proofs; optional NIP-07 worker event path | External NIP-07 signing and relay publication exercise |
+| Offline | IndexedDB non-financial drafts and sync | Offline payments, signature queue, service-worker app shell or guaranteed offline reload |
+| AI | Strict draft output and local fallback | Paid provider quality, cost or field usefulness |
+| UX | English/French and browser checks documented | Physical-device accessibility, low-bandwidth and usability pilot |
+| Operations | Single-process SQLite, env configuration and CI workflow | Production deployment, multi-instance scale and disaster-recovery drill |
 
-**Genuine wallet settlements: 0. User interviews: 0.** Wallet credentials and Bitcoin/Lightning lab tools are absent; Node itself is not a Lightning node. The local production server at localhost:3100 is not a public deployment. No external signer or relay publication is claimed. Unit fixtures and the unpaid browser journey do not remove these blockers.
+## Payment safety boundaries
 
-## Technical Boundaries
+- Mainnet is disabled.
+- Default network is regtest and displays NO REAL MONEY.
+- The worker NWC connection is intended to have only get_info, make_invoice and lookup_invoice permission.
+- JëfPass never invokes a spending method.
+- A preflight failure known to happen before make_invoice dispatch is FAILED and may be retried.
+- A failure after make_invoice may have been dispatched is UNKNOWN and must not be retried automatically.
+- If the wallet does not return an invoice hash after an ambiguous dispatch, the original operation may require manual provider investigation.
+- SETTLED requires wallet-reported incoming status, exact amount, matching hash and valid preimage.
+- Test fixtures are not real wallet settlements.
 
-- One persistent Node 24 instance and local SQLite file only. Not serverless, multi-region, multi-replica, highly available, or benchmarked.
-- `DB_PATH` defaults to `./data/jefpass.sqlite`; optional `APP_ENCRYPTION_KEY` is exactly 32 bytes encoded as hex/base64. Otherwise a durable key is generated beside the database (default `data/key`). The issuer key is generated as `data/issuer-private.pem` with the default path; no receipt-key environment variables are supported. No historical issuer registry or managed key-rotation flow exists.
-- The pinned SDK 9.0.0 postinstall patch is included, reapplication tested, and covered in both ESM/CJS. A fresh-machine installation is still a release check. Do not skip scripts.
-- Reported npm audit: 3 low findings in bolt11/secp256k1/elliptic, no moderate/high/critical findings. Recheck final dependencies; do not force a downgrade to a weaker major to suppress the report. This is not an external security audit.
-- `regtest` is the default; `signet`/`testnet` configuration requires exact wallet `getInfo` agreement. Mainnet is always disabled regardless of flags. Signet cannot be identified from a BOLT11 testnet prefix alone. No actual wallet/network combination is externally certified here.
-- `NWC_ALLOWED_RELAYS` is a comma-separated exact allowlist matching parsed target `URL.href`, including slash; empty fails closed. WSS plus the operator allowlist are the controls, with no separate private-address/DNS filter. Placeholder `wss://relay.wallet-provider.example/` is not reachable; use the actual trusted wallet configuration. `NEXT_PUBLIC_NOSTR_RELAYS` must contain only safe PUBLIC relay URLs.
-- NWC credential encryption is not full-database/disk encryption. Host operators and compromised server code remain trusted with decrypted credentials and issuer signing.
-- Missing-hash `UNKNOWN` may require manual wallet/operator investigation and leave a job blocked. No safe automatic recreation is promised. Losing reservations in a reset/restore can lose this protection.
-- An accepted hold invoice stays `PENDING` after local expiry until an authoritative wallet terminal response. This unresolved behavior can block wallet changes; settlement still requires the exact matching preimage.
-- Offline means worker-scoped drafts and queued nonfinancial creation with stable clientId/backend scoped deduplication. No offline payment, financial queue, customer-signature queue, or guaranteed draft recovery across deletion/devices. The manifest is an install hint only: no service worker or guaranteed offline app-shell reload PWA.
-- Customer keys live in sessionStorage keyed by job.id. Losing the original acceptance session can prevent later acknowledgement; there is no silent key replacement or customer key recovery.
-- Optional photos are deferred and no upload endpoint exists. AI requires explicit `AI_ENABLED=true` and a server key; its local fallback works without provider credit. Live output quality, cost and provider compatibility remain unverified.
+## Receipt trust boundaries
 
-## Evidence Boundaries
+Public verification checks the canonical payload, SHA-256 commitment and Ed25519 signature against the public key returned by the same installation. This demonstrates internal integrity, not an independently trusted legal issuer identity.
 
-Server Ed25519 issuer signature is not a worker's Nostr signature. Worker authorship is claimed only with a valid attached external NIP-07 event. Customer keys establish browser-key control, not verified people; the technician can fabricate an apparent customer. No cryptographic record certifies repair quality.
+Public payment status is an issuer-signed snapshot. It does not query a live wallet. Authorized private exports include invoice and preimage evidence for offline checks. A verifier needs an independently obtained issuer key to pin identity.
 
-Public browser verification checks canonical SHA-256 and Ed25519 against the current installation key. It does not query a wallet, identify the payer or establish the issuer's claimed settlement time. Public `SHA256_MATCH` is a server-signed claim, not a public preimage check. The standalone private-bundle verifier checks exported scope/signatures and available invoice/preimage evidence; it does not query a live wallet. Verifiers need independently pinned issuer provenance. Historical key rotation is not implemented.
+A signature does not prove that a repair was performed well. Customer key control does not prove that the signer is the named customer.
 
-Public receipt metadata includes worker/job IDs, scope hash, amount, timestamps, payment hash/source/network, and verification label, but no raw invoice/preimage, private notes, capability, or NWC secret. Receipt-by-ID access remains public even when passport sharing is off. Nostr kind 30078 contains only canonical sorted `{commitment,receiptId}` and `tags: [["d", receiptId]]`, not the full receipt; there is no added commitment salt. Private disclosure and public metadata carry correlation risk. Relay events may persist indefinitely.
+## Data and deployment boundaries
 
-No escrow, refunds guarantee, exchange, fiat conversion/cash-out, mobile-money provider verification, autonomous spending, public rating, identity checks, or guaranteed credit access. Voice/Wolof support is not implemented. AI quality, installation behavior, accessibility, slow-network behavior, and production security are not certified. There is no independent security audit or measured adoption/reach.
+- SQLite is local, persistent and single-instance.
+- No serverless or multi-replica deployment is supported without replacing storage.
+- Database rows, WAL/journals, swap and exports are not wholly encrypted by the NWC credential protection.
+- Preserve DB_PATH, the encryption key and issuer private key together.
+- The current issuer-key design has no managed rotation or historical key registry.
+- NWC encryption is worker-bound for new v1 records; legacy records remain readable until saved again.
+- Customer action keys live in job-scoped sessionStorage and have no recovery flow.
+- Public receipt metadata can be correlated; Nostr relay events may persist indefinitely.
+
+## Features intentionally deferred
+
+- Service photo uploads and evidence storage.
+- Voice input and Wolof localization.
+- Public worker discovery or marketplace.
+- Identity verification, ratings, credit scoring or lending.
+- Escrow, refunds guarantee and automated spending.
+- Mobile-money provider integration or fiat cash-out.
+- Full offline app shell and offline financial actions.
+- Independent security review and external audit.
+
+## Honest claims
+
+Do not claim:
+- a live or real-money payment if the test uses fixtures or simulation;
+- that the project is audited, trustless or production-ready;
+- that a customer signature verifies a person's identity;
+- that a receipt proves service quality;
+- that an AI model verifies a payment or approves work;
+- that the product works offline for payments.

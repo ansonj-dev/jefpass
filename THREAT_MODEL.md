@@ -1,51 +1,107 @@
-# Threat Model
+# JëfPass Threat Model
 
-Implemented prototype controls, not an audit certificate. Protect private job data, customer links/keys, worker isolation, NWC delegations, password/session hashes, issuer keys, payment states and recoverable records. [VERIFICATION.md](VERIFICATION.md) records 122 passing tests, typecheck, clean build, unpaid browser workflow and offline reconnection. Genuine wallet settlements: **0**; external signer/relay publication unexercised.
+This describes prototype controls and residual risk. It is not an independent security audit, penetration test or production certification.
 
-## Trust Boundaries
+## 1. Assets to protect
 
-| Boundary | Trust and exposure |
-| --- | --- |
-| Worker/customer browser to server | Inputs and UI state are untrusted; XSS or a stolen device can act as that browser |
-| Customer capability to acknowledgement | Link grants limited bearer authority; a browser signature is not legal identity |
-| Server to SQLite and secret keys | Server is trusted for access control, decryption, and issuer attestations; single-host compromise is material |
-| Server to NWC relay/wallet | Relay may censor/replay; wallet is authoritative for lookup, and delegation must be receive-only |
-| Receipt to browser verifier | Browser checks canonical hash and Ed25519; issuer trust is the current installation key from `/api/session`, not an independent registry or wallet query |
-| Private data to public Nostr/share page | Public disclosure is effectively irreversible; metadata may remain linkable |
-| Optional server AI provider | External processor may retain supplied text; disabled by default |
+- NWC connection secrets and worker wallet association.
+- Worker account sessions and profile data.
+- Job descriptions, prices, customer links and customer signatures.
+- Original Lightning invoice identity, payment hash and preimage.
+- Receipt issuer private key and public verification metadata.
+- Worker Nostr public-key association and signed receipt events.
+- Private proof exports, SQLite database, WAL, journals and backups.
 
-## Threats And Controls
+## 2. Trust boundaries
 
-| Threat | Implemented control | Validation boundary/residual risk |
-| --- | --- | --- |
-| Forged paid UI or receipt | Server settlement checks original incoming invoice, exact amount/hash, timestamp and SHA-256 preimage; receipt issuance rechecks stored preimage | Public `SHA256_MATCH` is an issuer claim, not a public wallet/preimage check; no genuine wallet settlement yet |
-| Timeout followed by duplicate invoice | Durable pre-request reservation; original operation identity; `UNKNOWN` blocks recreation, including missing hash | Fixture coverage is not a live crash/lab drill; manual wallet investigation may be needed |
-| Wallet switch or forged response | Original wallet fingerprint/network pinned; unresolved operations block changes; SDK envelope/correlation patch applied | Both module formats tested; genuine wallet interoperability unverified |
-| Under/overpayment, invalid BOLT11 | `bolt11` checks, exact safe-integer msat, network, creation expiry and hash checks | Fixture checks are not live wallet interoperability; accepted hold invoices remain pending until authoritative terminal state |
-| Account takeover | Scrypt with unique salts, hashed 30-day sessions, HttpOnly/SameSite=Strict cookies, Secure on HTTPS, rate limits | No MFA/account-recovery or external penetration test claimed; local HTTP lacks Secure cookies |
-| Cross-worker access or CSRF | Ownership checks on private objects/export, exact Origin, `X-Jefpass: 1`, Fetch Metadata checks | Public receipt/passport endpoints are intentionally public; review proxy origin/TLS behavior before deployment |
-| Stolen/replayed customer link | 256-bit token hashed at rest, seven-day expiry, five-minute single-use challenge, signed scope/action/job binding and acceptance key pin | Stolen unbound links may be redeemed; token-bearing access logs require operator redaction |
-| Technician fabricates customer | Browser-key signatures distinguish recorded assertions, not verified humans | Technician/colluding parties can impersonate a customer; no identity or repair-quality guarantee |
-| Credential leakage or relay SSRF | AES-256-GCM NWC storage; key outside SQLite; exact normalized target `URL.href` in operator WSS allowlist; empty fails closed | No separate private-address/DNS filter, worker-bound associated data, or versioned key envelope; compromised host can decrypt |
-| Tampering or misleading signatures | Sorted canonical JSON, SHA-256 commitment, Ed25519 issuer signature; optional Nostr event bound to worker key/content/d tag | Current-install issuer trust is not external provenance; managed rotation and historical registry absent |
-| Public proof/PII leak | Authorized private export; public receipt omits invoice/preimage; kind 30078 publishes only `{commitment,receiptId}` with d tag | Public IDs, amount, hash/source/network, scope hash and timestamps remain linkable; no added commitment salt |
-| XSS/malicious notes | React text rendering, strict schemas, bounded JSON and content-type checks | XSS/device compromise could steal customer sessionStorage keys and IndexedDB drafts; no upload endpoint exists |
-| AI injection or unapproved spend | No call without explicit AI_ENABLED=true and key; strict draft fields, no financial tools, worker review, timeout/fallback | Secret-pattern filtering is incomplete; paid model quality/compatibility unvalidated |
-| Offline replay or cross-account synchronization | Stable clientId, backend worker-scoped deduplication, owner session check before queue flush | Nonfinancial only; browser storage is not encrypted or guaranteed durable; no offline app-shell reload |
-| Host loss or corrupted backup | Durable SQLite and generated installation keys provide backup inputs | Consistent encrypted backups/isolated restore drills are operator obligations, not completed evidence |
+| Boundary | Risk |
+|---|---|
+| Worker/customer browser to API | Browser state and user inputs are untrusted; XSS or device compromise can steal active browser keys |
+| Customer link to signed action | Link is a bearer capability; signature proves key control, not legal identity |
+| Application process to SQLite and secret files | The host is trusted with authorization, decryption and issuer signing |
+| Application to NWC relay and wallet | Relay may be unavailable or censor; wallet is authoritative for invoice status |
+| Public receipt to browser verifier | Browser checks content against the issuer key served by the same installation unless the key is independently pinned |
+| Worker browser to Nostr signer and relays | Worker controls external signing; public relay events can persist and be correlated |
+| Optional AI provider | Text is sent to an external processor only after explicit server-side opt-in |
 
-The pinned SDK 9.0.0 patch is included, reapplication tested and covered by 52 ESM/CJS tests. It validates envelopes/method correlation and cleans up request failure paths, without rewriting NIP-47. Do not skip install scripts. The audit has 3 low findings in bolt11/secp256k1/elliptic and no moderate/high/critical findings; do not force a weaker-major downgrade merely to suppress it.
+## 3. Controls implemented
 
-Production should pin `APP_ORIGIN` to the browser-facing HTTPS origin. Without it, validation uses the direct Host header rather than Next's internal bind address; forwarded headers are not trusted. Restrict accepted hosts at the reverse proxy. CSP, no-referrer, no-sniff and frame-denial headers are implemented, but the CSP still permits inline scripts for Next.js; nonce-based CSP is future hardening. Runtime data and secret files are excluded from Next deployment tracing.
+### Authentication and API
 
-## Residual Risks
+- Passwords use salted scrypt.
+- Session tokens are random and only hashes are persisted.
+- Cookies are HttpOnly, SameSite=Strict and Secure when HTTPS is used.
+- Every mutation requires exact Origin, custom request header and same-site Fetch Metadata where present.
+- Production requires explicit APP_ORIGIN over HTTPS.
+- Request JSON is streamed, capped at 32 KB and parsed by strict Zod schemas.
+- Per-caller and authentication rate limits persist in SQLite.
+- Private job reads and changes verify worker ownership.
 
-Receive-only NWC avoids granting spending through this app; it does not change custody of a hosted worker wallet or protect against that wallet/provider's compromise. Seed phrases and wallet spending keys are never requested. A server holding a receive credential can still see sensitive payment metadata and create invoices if compromised.
+### Customer capabilities and signatures
 
-SQLite is not whole-disk encrypted by this design. NWC encryption does not protect plaintext job rows, WAL/journals, swap, logs, or exports. Use OS disk encryption, ACLs, encrypted backups, HTTPS, and a trusted host. Server-held encryption/signing keys cannot protect against a fully compromised running server.
+- Customer link tokens contain 256 bits of randomness and are hashed at rest.
+- Links expire after seven days; rotating the link invalidates the prior token.
+- Challenges and one-use nonces expire after five minutes.
+- Customer proofs use JëfPass ephemeral Nostr event kind 27236, not NIP-98 kind 27235.
+- Proofs bind action, job ID and canonical scope hash. They contain no relay tags.
+- Nonce consumption and state mutation occur in one transaction.
+- Acceptance pins the browser public key for later acknowledgement.
 
-An Ed25519 signature proves an issuer key signed bytes, not that its settlement report was honest. Public browser verification obtains the current issuer key from the same installation. The standalone private-bundle verifier checks exported scope, receipt/customer signatures and available payment evidence; independently pin its issuer key. Neither offline signature nor preimage/hash checks query a live wallet or guarantee payer identity or repair quality. Historical trust, managed rotation and compromise notices remain gaps.
+Residual risk: a stolen unbound link can be redeemed by an attacker. A technician can collude with or impersonate a customer. Browser-key control is not a verified person. Losing the sessionStorage key can prevent follow-up acknowledgement.
 
-With default `DB_PATH`, generated keys persist as `data/key` and `data/issuer-private.pem`; optional `APP_ENCRYPTION_KEY` must encode exactly 32 bytes as hex/base64. No receipt-key environment variables are supported. Losing/replacing keys can strand wallet connections and change issuer trust for historical receipts. Backup the matching data and keys securely; do not delete them to reset a shared instance.
+### Wallet credentials and Lightning
 
-Relay censorship, permanent metadata correlation, key loss, sessionStorage deletion, customer coercion, colluding parties, and inaccurate service descriptions remain possible. There is no extra commitment salt. Receipt-by-ID metadata remains public even if passport sharing is off; turning off sharing cannot retract a relay event. An accepted hold invoice can remain `PENDING` after local expiry until authoritative wallet terminal evidence. Mainnet is always disabled regardless of flags. No public deletion guarantee, production readiness, or external security audit is claimed.
+- NWC credentials are encrypted with AES-256-GCM.
+- New v1 envelopes bind the ciphertext to the worker ID using authenticated additional data.
+- Legacy unversioned envelopes remain readable during transition.
+- Wallet network and required methods are validated.
+- The app invokes only get_info, make_invoice and lookup_invoice.
+- Mainnet is disabled.
+- Invoice amount, network, signature, expiry and hash are checked before use.
+- Invoice operations are reserved before external calls.
+- Known preflight errors before dispatch are safely retryable.
+- After dispatch begins, uncertain results become UNKNOWN and are never blindly retried.
+- Reconciliation uses the original invoice hash and wallet identity.
+- SETTLED requires wallet-reported incoming settlement, exact amount and matching preimage.
+
+Residual risk: a compromised host can decrypt the NWC URI and use its granted invoice-creation permission. The application host and wallet service remain trusted. Missing invoice identity after an ambiguous request may require manual provider investigation. No genuine external settlement has been demonstrated in the recorded evidence.
+
+### Receipts and Nostr
+
+- Receipt payloads are canonicalized.
+- SHA-256 commitment and Ed25519 issuer signature detect tampering.
+- Public receipts omit the invoice and preimage.
+- Private exports are available only to the authenticated worker.
+- Worker Nostr commitments require external NIP-07 signing and are checked against the worker public key at attachment time.
+- The verified signer public key is retained with the event for later checks.
+
+Residual risk: the current installation issuer key is not independently trusted unless pinned through a separate channel. Server signatures do not prove physical work quality. Public receipt metadata can be correlated. Nostr relays may retain events indefinitely.
+
+### AI and offline
+
+- AI is disabled by default.
+- Provider calls require both an explicit enable flag and server-only key.
+- The schema allows title, description and category only.
+- AI has no payment, signature or approval authority.
+- Offline queue contains non-financial job drafts only and verifies the owning worker before synchronization.
+
+Residual risk: user text can contain sensitive information. Provider retention and output quality are not validated. IndexedDB drafts are not an encrypted vault and can be lost with browser storage. No guaranteed offline app shell exists.
+
+## 4. Storage and operations
+
+SQLite is local and persistent, not distributed. Job data, WAL/journals, exports and backups are not protected by NWC credential encryption. Use OS disk encryption, strict filesystem ACLs, encrypted backups and an isolated restore procedure. Preserve database and generated issuer/encryption keys together.
+
+Production must use HTTPS and exact APP_ORIGIN. Restrict network access at the reverse proxy and do not trust arbitrary forwarded host headers.
+
+## 5. Remaining high-value security work
+
+- Independent security review and penetration test.
+- Genuine NWC wallet interoperability and test-network settlement.
+- Crash/restart drill across the dispatch boundary.
+- Encryption key rotation and operator recovery runbook.
+- Consistent encrypted backup and restore drill.
+- Customer session-loss and key recovery research.
+- Slow-network and physical-device tests.
+- Historical issuer key registry or independent trust anchor.
+
+The prototype should not be marketed as audited, trustless or production-ready.
