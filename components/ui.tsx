@@ -12,8 +12,8 @@ import { api, safeUrl } from "@/lib/client";
 
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export function Brand({ compact = false }: { compact?: boolean }) {
-  return <Link href="/" className="brand" aria-label="JëfPass"><span className="monogram" aria-hidden="true">j<span>p</span><i /></span>{!compact && <span>JëfPass<span className="brand-dot">.</span></span>}</Link>;
+export function Brand({ compact = false, href = "/" }: { compact?: boolean; href?: string }) {
+  return <Link href={href} className="brand" aria-label="JëfPass"><span className="monogram" aria-hidden="true">j<span>p</span><i /></span>{!compact && <span>JëfPass<span className="brand-dot">.</span></span>}</Link>;
 }
 
 export function Notice({ children, tone = "error" }: { children: ReactNode; tone?: "error" | "success" | "info" }) {
@@ -82,7 +82,7 @@ export function PublicShell({ children, network }: { children: ReactNode; networ
     return () => { current = false; };
   }, [network]);
   const label = network || configured;
-  return <div className="public-shell"><header className="public-header"><Brand /><LanguageToggle /></header><main className="public-main"><div className="network-banner"><span className="status-dot" />{label ? label.toUpperCase() : t("notConnected")}{["regtest", "signet", "testnet"].includes(label.toLowerCase()) && ` / ${t("noMoney")}`}</div>{children}</main><footer className="public-footer"><Link href="/"><ArrowLeft size={14} />{t("back")}</Link><span>{t("tagline")}</span></footer></div>;
+  return <div className="public-shell"><header className="public-header"><Brand /><LanguageToggle /></header><main className="public-main"><div className="network-banner"><span className="status-dot" />{label ? label.toUpperCase() : t("notConnected")}{["regtest", "signet", "testnet"].includes(label.toLowerCase()) && ` / ${t("noMoney")}`}</div>{children}</main><footer className="public-footer"><Link href="/app"><ArrowLeft size={14} />{t("back")}</Link><span>{t("tagline")}</span></footer></div>;
 }
 
 export function DataRecord({ value }: { value: unknown }) {
