@@ -74,8 +74,13 @@ export function assessSettlement(payment: Payment, result: WalletResult, now = D
   if (invoice.paymentHash !== payment.paymentHash || result.payment_hash !== payment.paymentHash || result.type !== "incoming" ||
       (result.invoice && result.invoice.toLowerCase() !== payment.invoice.toLowerCase())) throw new Error("Wallet response does not match the original invoice");
   const base = { ...payment, error: undefined, verifiedAt: undefined, preimage: undefined };
-  if (result.state && !["settled", "pending", "accepted", "expired", "failed", "cancelled"].includes(result.state)) {
-    return { ...base, state: "UNKNOWN", error: "Wallet returned an unrecognized invoice state" };
+  // NIP-47 defines pending/accepted/settled/expired for incoming invoices.
+  // A failed/cancelled or internally contradictory result is not terminal proof.
+  if (result.state && !["settled", "pending", "accepted", "expired"].includes(result.state)) {
+    return { ...base, state: "UNKNOWN", error: "Wallet returned an unsupported incoming-invoice state" };
+  }
+  if (result.state && result.state !== "settled" && result.settled_at !== undefined) {
+    return { ...base, state: "UNKNOWN", error: "Wallet returned conflicting invoice state and settlement time" };
   }
   if (!Number.isSafeInteger(result.amount) || (result.amount ?? 0) <= 0) throw new Error("Wallet amount is missing");
   if (result.amount !== payment.expectedMsat) return { ...base, state: result.amount! < payment.expectedMsat ? "UNDERPAID" : "OVERPAID", error: "Wallet amount differs from agreed invoice" };
@@ -87,8 +92,6 @@ export function assessSettlement(payment: Payment, result: WalletResult, now = D
     }
     return { ...base, state: "SETTLED", preimage: result.preimage, settledAt: result.settled_at, verifiedAt: new Date(now).toISOString() };
   }
-  if (result.state === "failed") return { ...base, state: "FAILED" };
-  if (result.state === "cancelled") return { ...base, state: "CANCELLED" };
   if (result.state === "expired") return { ...base, state: "EXPIRED" };
   if (["pending", "accepted"].includes(result.state || "") || (!result.state && !result.settled_at)) return { ...base, state: "PENDING" };
   return { ...base, state: "UNKNOWN", error: "Wallet returned an ambiguous invoice state" };
@@ -96,21 +99,48 @@ export function assessSettlement(payment: Payment, result: WalletResult, now = D
 
 const defaultFactory: ClientFactory = uri => new NWCClient({ nostrWalletConnectUrl: uri, logger: silentLogger });
 
-async function usingClient<T>(uri: string, factory: ClientFactory, operation: (client: WalletClient) => Promise<T>): Promise<T> {
+async function usingClient<T>(
+  uri: string,
+  factory: ClientFactory,
+  operation: (client: WalletClient, assertActive: () => void) => Promise<T>,
+): Promise<T> {
   validateConnection(uri);
   const client = factory(uri);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    try { client.close(); } catch { /* Cleanup must not mask the wallet result. */ }
+  };
+  const assertActive = () => {
+    if (timedOut) throw new Error("Wallet operation timed out");
+  };
+  const operationPromise = Promise.resolve().then(() => operation(client, assertActive));
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      close();
+      reject(new Error("Wallet outcome unknown after timeout"));
+    }, 20000);
+  });
   try {
-    return await Promise.race([operation(client), new Promise<never>((_, reject) => {
-      timer = setTimeout(() => { client.close(); reject(new Error("Wallet outcome unknown after timeout")); }, 20000);
-    })]);
-  } finally { if (timer) clearTimeout(timer); client.close(); }
+    return await Promise.race([operationPromise, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    close();
+  }
 }
 
 export async function connectWallet(uri: string, factory = defaultFactory) {
   const identity = validateConnection(uri);
   const network = configuredNetwork();
-  await usingClient(uri, factory, async client => validateCapabilities(await client.getInfo(), network));
+  await usingClient(uri, factory, async (client, assertActive) => {
+    const info = await client.getInfo();
+    assertActive();
+    validateCapabilities(info, network);
+  });
   return { ...identity, network };
 }
 
@@ -121,18 +151,28 @@ function pinWallet(uri: string, payment: Payment) {
 
 export async function createInvoice(uri: string, payment: Payment, factory = defaultFactory): Promise<Payment> {
   if (payment.invoice || payment.paymentHash) return payment;
+  let dispatchStarted = false;
   try {
     pinWallet(uri, payment);
-    return await usingClient(uri, factory, async client => {
-      validateCapabilities(await client.getInfo(), payment.network);
+    return await usingClient(uri, factory, async (client, assertActive) => {
+      // Read-only preflight: a failure here proves make_invoice was never sent.
+      const info = await client.getInfo();
+      assertActive();
+      validateCapabilities(info, payment.network);
+      assertActive();
+      // Once this boundary is crossed, any timeout/error is ambiguous.
+      dispatchStarted = true;
       const result = await client.makeInvoice({ amount: payment.expectedMsat, description: `JefPass ${payment.operationId}`, expiry: 3600 });
+      assertActive();
       if (!result.invoice) throw new Error("Wallet did not return an invoice");
       const identity = validateInvoice(result.invoice, payment.expectedMsat, payment.network);
       if (result.type !== "incoming" || result.amount !== payment.expectedMsat || result.payment_hash !== identity.paymentHash) throw new Error("Wallet invoice identity mismatch");
       return { ...payment, state: "INVOICE_CREATED", invoice: result.invoice, paymentHash: identity.paymentHash, expiresAt: identity.expiresAt, error: undefined };
     });
   } catch {
-    return { ...payment, state: "UNKNOWN", error: "Invoice creation outcome unknown. Do not create another request; inspect the original wallet operation." };
+    return dispatchStarted
+      ? { ...payment, state: "UNKNOWN", error: "The invoice request may have reached the wallet. Do not retry or create a replacement; resolve the original operation with the wallet provider." }
+      : { ...payment, state: "FAILED", error: "Wallet preflight failed before make_invoice was sent. No invoice request was dispatched; correct the connection and retry." };
   }
 }
 
@@ -141,9 +181,13 @@ export async function reconcilePayment(uri: string, payment: Payment, factory = 
   if (!payment.paymentHash || !payment.invoice) return { ...payment, state: "UNKNOWN", error: "Original invoice missing; wallet-side investigation required. Automatic creation is blocked." };
   try {
     pinWallet(uri, payment);
-    return await usingClient(uri, factory, async client => {
-      validateCapabilities(await client.getInfo(), payment.network);
-      return assessSettlement(payment, await client.lookupInvoice({ payment_hash: payment.paymentHash! }));
+    return await usingClient(uri, factory, async (client, assertActive) => {
+      const info = await client.getInfo();
+      assertActive();
+      validateCapabilities(info, payment.network);
+      const result = await client.lookupInvoice({ payment_hash: payment.paymentHash! });
+      assertActive();
+      return assessSettlement(payment, result);
     });
   } catch {
     return { ...payment, state: "UNKNOWN", verifiedAt: undefined, error: "Wallet could not confirm the original invoice. Reconcile again; do not pay a replacement." };

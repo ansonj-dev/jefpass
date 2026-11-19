@@ -100,18 +100,33 @@ function encryptionKey(): Buffer {
   return key;
 }
 
-export function encryptWallet(uri: string): string {
-  const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), nonce);
-  const ciphertext = Buffer.concat([cipher.update(uri, "utf8"), cipher.final()]);
-  return Buffer.concat([nonce, cipher.getAuthTag(), ciphertext]).toString("base64");
+function walletAad(workerId: string): Buffer {
+  return Buffer.from(`jefpass:nwc:v1:${workerId}`, "utf8");
 }
 
-export function decryptWallet(encrypted: string): string {
+export function encryptWallet(uri: string, workerId = "legacy"): string {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), nonce);
+  cipher.setAAD(walletAad(workerId));
+  const ciphertext = Buffer.concat([cipher.update(uri, "utf8"), cipher.final()]);
+  return `v1.${Buffer.concat([nonce, cipher.getAuthTag(), ciphertext]).toString("base64")}`;
+}
+
+export function decryptWallet(encrypted: string, workerId = "legacy"): string {
+  if (encrypted.startsWith("v1.")) {
+    const bytes = Buffer.from(encrypted.slice(3), "base64");
+    if (bytes.length < 29) throw new Error("Invalid encrypted wallet envelope");
+    const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), bytes.subarray(0, 12));
+    decipher.setAAD(walletAad(workerId));
+    decipher.setAuthTag(bytes.subarray(12, 28));
+    return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
+  }
+  // Backward-compatible reader for ciphertext written before worker-bound AAD.
   const bytes = Buffer.from(encrypted, "base64");
-  const cipher = createDecipheriv("aes-256-gcm", encryptionKey(), bytes.subarray(0, 12));
-  cipher.setAuthTag(bytes.subarray(12, 28));
-  return Buffer.concat([cipher.update(bytes.subarray(28)), cipher.final()]).toString("utf8");
+  if (bytes.length < 29) throw new Error("Invalid legacy encrypted wallet envelope");
+  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), bytes.subarray(0, 12));
+  decipher.setAuthTag(bytes.subarray(12, 28));
+  return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
 }
 
 export function rateLimit(key: string, limit = 120, intervalMs = 60_000): void {
@@ -127,8 +142,24 @@ export function rateLimit(key: string, limit = 120, intervalMs = 60_000): void {
 }
 
 export function requestOrigin(request: Request): string {
+  const configured = process.env.APP_ORIGIN?.trim();
+  if (configured) {
+    let origin: URL;
+    try { origin = new URL(configured); } catch { throw new ApiError(500, "APP_ORIGIN must be an absolute origin URL"); }
+    if (!["http:", "https:"].includes(origin.protocol) || origin.username || origin.password ||
+        origin.pathname !== "/" || origin.search || origin.hash) {
+      throw new ApiError(500, "APP_ORIGIN must contain only the application origin");
+    }
+    if (process.env.NODE_ENV === "production" && origin.protocol !== "https:") {
+      throw new ApiError(500, "Production APP_ORIGIN must use HTTPS");
+    }
+    return origin.origin;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new ApiError(500, "APP_ORIGIN must be configured explicitly in production");
+  }
   const url = new URL(request.url);
-  return new URL(process.env.APP_ORIGIN || `${url.protocol}//${request.headers.get("host") || url.host}`).origin;
+  return new URL(`${url.protocol}//${request.headers.get("host") || url.host}`).origin;
 }
 
 export function validateMutation(request: Request): void {

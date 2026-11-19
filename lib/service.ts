@@ -218,7 +218,7 @@ export async function saveWallet(workerId: string, input: unknown) {
   let connection;
   try { connection = await connectWallet(uri); } catch { throw new ApiError(400, "Wallet connection or validation failed"); }
   const validated = z.object({ fingerprint: z.string().min(1).max(256), source: z.string().min(1).max(100), network: z.string().min(1).max(100) }).parse(connection);
-  const encryptedUri = encryptWallet(uri);
+  const encryptedUri = encryptWallet(uri, workerId);
   return transaction(() => {
     assertWalletMutable(workerId);
     writeDocument("wallets", workerId, { ...validated, encryptedUri });
@@ -255,7 +255,6 @@ function checkedPayment(value: unknown, reserved: Payment): Payment {
     throw new Error("Missing invoice identity");
   }
   if (payment.state !== "SETTLED") delete payment.verifiedAt;
-  if (payment.error) payment.error = "Wallet could not confirm the operation";
   return payment;
 }
 
@@ -275,8 +274,12 @@ function savePayment(workerId: string, id: string, before: Payment, payment: Pay
 export function reserveInvoice(workerId: string, id: string) {
   return transaction(() => {
     const job = ownedJob(workerId, id);
-    if (job.payment) return { job, wallet: null };
-    if (!job.acceptedAt) throw new ApiError(409, "Customer must accept before an invoice is requested");
+    const retryKnownPreflightFailure = job.payment?.state === "FAILED" && !job.payment.invoice && !job.payment.paymentHash;
+    if (job.payment && !retryKnownPreflightFailure) return { job, wallet: null };
+    if (!job.completedAt || !["COMPLETED", "ACKNOWLEDGED"].includes(job.state)) {
+      throw new ApiError(409, "Complete the accepted work before requesting payment");
+    }
+    if (!job.acceptedAt) throw new ApiError(409, "Customer acceptance is required before payment");
     const wallet = walletFor(workerId);
     job.payment = { state: "UNKNOWN", operationId: randomUUID(), source: wallet.source, network: wallet.network,
       walletFingerprint: wallet.fingerprint, expectedMsat: job.amountSats * 1000 };
@@ -292,7 +295,7 @@ export async function invoiceJob(workerId: string, id: string): Promise<Job> {
   let payment: Payment;
   try {
     const { createInvoice } = await import("@/lib/lightning/nwc");
-    payment = checkedPayment(await createInvoice(decryptWallet(reservation.wallet.encryptedUri), { ...before }), before);
+    payment = checkedPayment(await createInvoice(decryptWallet(reservation.wallet.encryptedUri, workerId), { ...before }), before);
   } catch {
     payment = { ...before, state: "UNKNOWN", error: "Invoice creation outcome is unknown; automatic retry is disabled" };
   }
@@ -302,7 +305,10 @@ export async function invoiceJob(workerId: string, id: string): Promise<Job> {
 export async function reconcileJob(workerId: string, id: string): Promise<Job> {
   const job = ownedJob(workerId, id);
   if (!job.payment) throw new ApiError(409, "No payment has been requested");
-  if (!job.payment.paymentHash || job.payment.state === "SETTLED") return job;
+  if (!job.payment.paymentHash || !job.payment.invoice) {
+    throw new ApiError(409, "No original invoice identity is available. Do not retry automatically; resolve the original wallet operation first.");
+  }
+  if (job.payment.state === "SETTLED") return job;
   const wallet = walletFor(workerId);
   if (wallet.fingerprint !== job.payment.walletFingerprint || wallet.network !== job.payment.network) {
     throw new ApiError(409, "Reconnect the original invoice wallet and network");
@@ -311,7 +317,7 @@ export async function reconcileJob(workerId: string, id: string): Promise<Job> {
   let payment: Payment;
   try {
     const { reconcilePayment } = await import("@/lib/lightning/nwc");
-    payment = checkedPayment(await reconcilePayment(decryptWallet(wallet.encryptedUri), { ...before }), before);
+    payment = checkedPayment(await reconcilePayment(decryptWallet(wallet.encryptedUri, workerId), { ...before }), before);
   } catch { throw new ApiError(502, "Wallet reconciliation could not be verified"); }
   return savePayment(workerId, id, before, payment);
 }
