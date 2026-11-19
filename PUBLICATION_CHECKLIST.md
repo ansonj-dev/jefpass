@@ -11,7 +11,7 @@ Use this checklist before any public release or hackathon submission. A checked 
 - [x] GitHub Actions CI is configured for main and pull requests.
 - [x] GitHub Actions passed 128 tests across 9 files, typecheck, production build and the configured dependency-audit gate on 19 November 2026.
 - [x] The source-code follow-up commit `5e2d340c83d2412591ab9aea5457fc51f94d5a92` passed its GitHub Actions run.
-- [ ] Confirm this final verification-report documentation commit also has a green CI run.
+- [x] Verification-report commit `b454dafdf602cfa4514f09796e3ac696059dcbca` passed CI: https://github.com/ansonj-dev/jefpass/actions/runs/44564741377.
 - [ ] Confirm a fresh-machine npm ci installation and postinstall patch on a developer workstation.
 - [ ] Review final commit history, screenshots, video and archive for secrets and customer data.
 
@@ -60,7 +60,7 @@ Use this checklist before any public release or hackathon submission. A checked 
 
 - [x] README and architecture documentation.
 - [x] Threat model, limitations and demo guide.
-- [ ] Run and record the final green CI status after the final push.
+- [x] Final source commit `5e2d340c83d2412591ab9aea5457fc51f94d5a92` passed 128 tests, typecheck, production build and the configured dependency-audit gate; subsequent documentation commit also passed CI.
 - [ ] Record an honest three-minute demo.
 - [ ] Prepare concise slides and repository ZIP.
 - [ ] Open all links in a signed-out browser.

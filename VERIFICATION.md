@@ -8,7 +8,7 @@
 
 ## Automated CI result
 
-<badge>CI passed</badge>
+**CI status: PASSED**
 
 GitHub Actions successfully completed all configured steps on 19 November 2026:
 
@@ -20,7 +20,7 @@ GitHub Actions successfully completed all configured steps on 19 November 2026:
 
 The dependency audit still reports **3 low-severity vulnerabilities** in the existing Lightning invoice dependency chain. The CI gate is set to fail on moderate or higher severity. This is not a statement that the dependency graph has zero advisories. Do not use `npm audit fix --force` without reviewing the breaking-change implications.
 
-The code verification commit above passed GitHub Actions on 19 November 2026. The workflow ran `npm ci`, tests, typecheck, production build and `npm audit --omit=dev --audit-level=moderate`; all steps completed successfully. This verification-report edit is documentation-only and triggers another CI run.
+The code verification commit above passed GitHub Actions on 19 November 2026. The workflow ran `npm ci`, tests, typecheck, production build and `npm audit --omit=dev --audit-level=moderate`; all steps completed successfully. The verification-report commit `b454dafdf602cfa4514f09796e3ac696059dcbca` also passed its own workflow run: https://github.com/ansonj-dev/jefpass/actions/runs/44564741377.
 
 ## Test coverage
 
