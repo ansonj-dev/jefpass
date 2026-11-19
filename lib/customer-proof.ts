@@ -2,7 +2,7 @@ import { verifyEvent, type Event as NostrEvent } from "nostr-tools";
 import { z } from "zod";
 import { ApiError, hash, randomToken } from "./auth";
 import { deleteDocument, getDb, readDocument, writeDocument } from "./db";
-import type { Job } from "./types";
+import { CUSTOMER_PROOF_KIND, type Job } from "./types";
 
 export const actionSchema = z.enum(["accept", "acknowledge", "dispute"]);
 export type CustomerAction = z.infer<typeof actionSchema>;
@@ -46,7 +46,8 @@ export function verifiedNostrEvent(input: unknown, kind: number): NostrEvent {
 }
 
 export function consumeCustomerProof(job: Job, action: CustomerAction, input: unknown): NostrEvent {
-  const event = verifiedNostrEvent(input, 27235);
+  const event = verifiedNostrEvent(input, CUSTOMER_PROOF_KIND);
+  if (event.tags.length !== 0) throw new ApiError(400, "Customer proof events must not contain relay tags");
   if (Math.abs(event.created_at * 1000 - Date.now()) > 5 * 60_000) throw new ApiError(400, "Customer proof is outside the five-minute window");
   let content: unknown;
   try { content = JSON.parse(event.content); } catch { throw new ApiError(400, "Invalid customer proof content"); }

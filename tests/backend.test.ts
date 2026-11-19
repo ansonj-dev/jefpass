@@ -10,7 +10,7 @@ import { attachNostrReceipt, getReceipt, receiptCommitment, receiptPublicKey, ve
 import { completeJob, createJob, createReceipt, customerAction, disconnectWallet, getCustomer, invoiceJob, ownedJob, passport, reserveInvoice, sanitizeJob, saveWallet, setVisibility, shareJob, updateProfile } from "../lib/service";
 import { handleRequest } from "../app/api/[...path]/route";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools";
-import type { Job, Worker } from "../lib/types";
+import { CUSTOMER_PROOF_KIND, type Job, type Worker } from "../lib/types";
 
 const directory = mkdtempSync(join(tmpdir(), "jefpass-backend-"));
 process.env.DB_PATH = join(directory, "test.sqlite");
@@ -28,7 +28,7 @@ beforeAll(async () => {
 });
 
 function signed(challenge: Challenge, key = secret, createdAt = Math.floor(Date.now() / 1000)) {
-  return finalizeEvent({ kind: 27235, created_at: createdAt, tags: [], content: JSON.stringify(challenge) }, key);
+  return finalizeEvent({ kind: CUSTOMER_PROOF_KIND, created_at: createdAt, tags: [], content: JSON.stringify(challenge) }, key);
 }
 
 function acceptedJob(workerId = owner.id) {
@@ -92,13 +92,13 @@ describe("passwords and sessions", () => {
   });
 
   it("authenticates wallet ciphertext and keeps the key across database reconnects", () => {
-    const encrypted = encryptWallet("nostr+walletconnect://private-wallet-secret");
+    const encrypted = encryptWallet("nostr+walletconnect://private-wallet-secret", "worker-one");
     expect(encrypted).not.toContain("private-wallet-secret");
     closeDatabases();
-    expect(decryptWallet(encrypted)).toBe("nostr+walletconnect://private-wallet-secret");
-    const damaged = Buffer.from(encrypted, "base64");
-    damaged[damaged.length - 1] ^= 1;
-    expect(() => decryptWallet(damaged.toString("base64"))).toThrow();
+    expect(decryptWallet(encrypted, "worker-one")).toBe("nostr+walletconnect://private-wallet-secret");
+    expect(() => decryptWallet(encrypted, "worker-two")).toThrow();
+    const damaged = `${encrypted.slice(0, -1)}${encrypted.endsWith("A") ? "B" : "A"}`;
+    expect(() => decryptWallet(damaged, "worker-one")).toThrow();
   });
 });
 
@@ -264,7 +264,8 @@ describe("receipts and public privacy", () => {
 describe("durable invoice reservation without external API calls", () => {
   it("reserves UNKNOWN once, survives a crash, never reissues and blocks wallet changes", async () => {
     const { job } = acceptedJob(other.id);
-    writeDocument("wallets", other.id, { encryptedUri: encryptWallet("nostr+walletconnect://test-only"), fingerprint: "wallet-one", source: "NWC", network: "regtest" });
+    completeJob(other.id, job.id);
+    writeDocument("wallets", other.id, { encryptedUri: encryptWallet("nostr+walletconnect://test-only", other.id), fingerprint: "wallet-one", source: "NWC", network: "regtest" });
     const first = reserveInvoice(other.id, job.id);
     expect(first.wallet).not.toBeNull();
     expect(first.job.payment).toMatchObject({ state: "UNKNOWN", expectedMsat: draft.amountSats * 1000, network: "regtest", walletFingerprint: "wallet-one" });

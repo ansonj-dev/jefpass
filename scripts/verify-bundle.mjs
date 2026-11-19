@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { decode } from "bolt11";
 import { verifyEvent } from "nostr-tools";
 
+// JëfPass application-specific ephemeral event; NIP-98 reserves kind 27235.
+const CUSTOMER_PROOF_KIND = 27236;
+
 export function canonical(value) {
   if (value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isSafeInteger(value))) return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -27,7 +30,7 @@ export function verifyBundle(bundle, trustedIssuer = process.env.TRUSTED_ISSUER_
       const acknowledgements = job?.acknowledgements || [];
       const customerSignaturesValid = acknowledgements.every(item => {
         const proof = JSON.parse(item.event.content);
-        return verifyEvent(item.event) && item.event.kind === 27235 && proof.jobId === job.id &&
+        return verifyEvent(item.event) && item.event.kind === CUSTOMER_PROOF_KIND && proof.jobId === job.id &&
           proof.scopeHash === receipt.scopeHash && proof.action === item.action &&
           (!job.customerPubkey || item.event.pubkey === job.customerPubkey);
       }) && (!job?.acceptedAt || acknowledgements.some(item => item.action === "accept")) &&
@@ -43,7 +46,7 @@ export function verifyBundle(bundle, trustedIssuer = process.env.TRUSTED_ISSUER_
           hash(Buffer.from(payment.preimage, "hex")) === payment.paymentHash ? "HASH_AMOUNT_PREIMAGE_MATCH" : "INVALID";
       }
       const attachment = (bundle.nostr || []).find(item => item.receiptId === receipt.id);
-      const workerSignatureValid = !attachment || (verifyEvent(attachment.event) && attachment.event.pubkey === bundle.worker.pubkey &&
+      const workerSignatureValid = !attachment || (verifyEvent(attachment.event) && attachment.event.pubkey === (attachment.workerPubkey || bundle.worker.pubkey) &&
         attachment.event.kind === 30078 && attachment.event.content === canonical({ commitment, receiptId: receipt.id }) &&
         JSON.stringify(attachment.event.tags) === JSON.stringify([["d", receipt.id]]));
       return { id: receipt.id, valid: commitmentValid && signatureValid && scopeValid && customerSignaturesValid && workerSignatureValid && paymentEvidence !== "INVALID",

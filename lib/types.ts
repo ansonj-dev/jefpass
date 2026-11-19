@@ -1,3 +1,5 @@
+export const CUSTOMER_PROOF_KIND = 27236;
+
 export type PaymentState = "NOT_REQUESTED" | "INVOICE_CREATED" | "PENDING" | "UNKNOWN" | "SETTLED" | "EXPIRED" | "FAILED" | "CANCELLED" | "UNDERPAID" | "OVERPAID";
 export type ServiceState = "QUOTED" | "ACCEPTED" | "COMPLETED" | "ACKNOWLEDGED" | "DISPUTED";
 export interface Worker { id: string; name: string; occupation: string; bio: string; pubkey?: string; }

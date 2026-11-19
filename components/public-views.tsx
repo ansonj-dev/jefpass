@@ -7,7 +7,7 @@ import { finalizeEvent, generateSecretKey } from "nostr-tools";
 import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import { ArrowUpRight, Check, CheckCheck, FileCheck2, Fingerprint, LoaderCircle, RefreshCw, ShieldCheck, ShieldQuestion, TriangleAlert } from "lucide-react";
 import { absoluteUrl, api, verifyReceiptEvent, verifyReceiptInBrowser, type Receipt, type ReceiptVerificationRecord, type Session } from "@/lib/client";
-import { isPaymentVerified, type Job, type Worker } from "@/lib/types";
+import { CUSTOMER_PROOF_KIND, isPaymentVerified, type Job, type Worker } from "@/lib/types";
 import { useI18n } from "./providers";
 import { DataRecord, errorMessage, JobStates, Loading, Notice, PublicShell, QRPanel, StatusBadge } from "./ui";
 
@@ -59,7 +59,7 @@ export function CustomerConfirmation() {
       if (!stored && fresh.job.acceptedAt) throw new Error(language === "fr" ? "La clé de confirmation manque dans cette session. Revenez au navigateur utilisé pour accepter." : "The confirmation key is missing from this session. Return to the browser used to accept this job.");
       if (!stored) { stored = bytesToHex(generateSecretKey()); sessionStorage.setItem(storageKey, stored); }
       const secret = hexToBytes(stored);
-      const event = finalizeEvent({ kind: 27235, content: JSON.stringify({ ...fresh.challenge, action }), tags: [], created_at: Math.floor(Date.now() / 1000) }, secret);
+      const event = finalizeEvent({ kind: CUSTOMER_PROOF_KIND, content: JSON.stringify({ ...fresh.challenge, action }), tags: [], created_at: Math.floor(Date.now() / 1000) }, secret);
       await api(path, "POST", { action, event });
       setMessage(t("customerDone")); refresh();
     } catch (error) { setActionError(errorMessage(error)); } finally { setBusy(""); }
