@@ -268,6 +268,16 @@ describe("receipts and public privacy", () => {
 });
 
 describe("durable invoice reservation without external API calls", () => {
+  it("classifies a locally undecryptable wallet credential as a safe preflight failure", async () => {
+    const { job } = acceptedJob(other.id);
+    completeJob(other.id, job.id);
+    writeDocument("wallets", other.id, { encryptedUri: "invalid-ciphertext", fingerprint: "wallet-one", source: "NWC", network: "regtest" });
+    const result = await invoiceJob(other.id, job.id);
+    expect(result.payment?.state).toBe("FAILED");
+    expect(result.payment?.invoice).toBeUndefined();
+    expect(result.payment?.paymentHash).toBeUndefined();
+    expect(result.payment?.error).toContain("No invoice request was sent");
+  });
   it("allows a new invoice attempt only after a confirmed preflight failure with no invoice identity", () => {
     const { job } = acceptedJob(other.id);
     completeJob(other.id, job.id);

@@ -292,12 +292,42 @@ export async function invoiceJob(workerId: string, id: string): Promise<Job> {
   const reservation = reserveInvoice(workerId, id);
   if (!reservation.wallet) return reservation.job;
   const before = reservation.job.payment!;
+  let uri: string;
+  let createInvoice: typeof import("@/lib/lightning/nwc").createInvoice;
+  try {
+    // Credential decryption and module loading happen before any wallet request.
+    uri = decryptWallet(reservation.wallet.encryptedUri, workerId);
+    ({ createInvoice } = await import("@/lib/lightning/nwc"));
+  } catch {
+    return savePayment(workerId, id, before, {
+      ...before,
+      state: "FAILED",
+      error: "The saved wallet connection could not be prepared. No invoice request was sent; reconnect the wallet before retrying.",
+    });
+  }
+
+  let result: Payment;
+  try {
+    result = await createInvoice(uri, { ...before });
+  } catch {
+    // The adapter owns the dispatch boundary. An unexpected throw after entering it
+    // is conservatively ambiguous; never turn it into a retryable preflight failure.
+    return savePayment(workerId, id, before, {
+      ...before,
+      state: "UNKNOWN",
+      error: "The invoice operation returned unexpectedly. Do not retry or create a replacement; resolve the original wallet operation first.",
+    });
+  }
+
   let payment: Payment;
   try {
-    const { createInvoice } = await import("@/lib/lightning/nwc");
-    payment = checkedPayment(await createInvoice(decryptWallet(reservation.wallet.encryptedUri, workerId), { ...before }), before);
+    payment = checkedPayment(result, before);
   } catch {
-    payment = { ...before, state: "UNKNOWN", error: "Invoice creation outcome is unknown; automatic retry is disabled" };
+    payment = {
+      ...before,
+      state: "UNKNOWN",
+      error: "The wallet response could not be validated after invoice dispatch. Do not retry or create a replacement.",
+    };
   }
   return savePayment(workerId, id, before, payment);
 }
