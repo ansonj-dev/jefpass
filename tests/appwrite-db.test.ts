@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { login, register, sessionWorker } from "../lib/auth";
 import {
   getRequestSecret,
   insertDocument,
+  listDocuments,
   readDocument,
   transaction,
   withRequestDatabase,
@@ -192,6 +194,40 @@ describe("Appwrite TablesDB persistence adapter", () => {
     // No document changes were made by the read-only operation.
     expect(records.size).toBe(105);
     expect(table("secrets").size).toBe(2);
+  });
+
+  it("registers and logs in across separate Appwrite-backed requests", async () => {
+    const credentials = {
+      name: "Awa Diallo",
+      occupation: "Phone repair technician",
+      email: "awa@example.test",
+      password: "strong-demo-password-2026",
+    };
+
+    let workerId = "";
+    let sessionToken = "";
+
+    await withRequestDatabase(request(), async () => {
+      const result = await register(credentials);
+      workerId = result.worker.id;
+      sessionToken = result.token;
+      expect(sessionWorker(sessionToken)?.id).toBe(workerId);
+    });
+
+    expect(table("records").size).toBeGreaterThanOrEqual(3);
+
+    await withRequestDatabase(request(), async () => {
+      expect(sessionWorker(sessionToken)?.id).toBe(workerId);
+      const result = await login({ email: credentials.email, password: credentials.password });
+      expect(result.worker.id).toBe(workerId);
+      sessionToken = result.token;
+    });
+
+    await withRequestDatabase(request(), async () => {
+      expect(sessionWorker(sessionToken)?.id).toBe(workerId);
+      expect(listDocuments("accounts")).toHaveLength(1);
+      expect(listDocuments("workers")).toHaveLength(1);
+    });
   });
 
   it("rolls back application changes when a request fails before its database commit", async () => {

@@ -88,6 +88,7 @@ Do not add public permissions to either JëfPass table.
 
 - The adapter is a compatibility layer designed to keep the current synchronous service logic working while making Appwrite TablesDB the durable store.
 - It currently loads the records table for each API request. This is appropriate for a small prototype dataset, not a high-scale database access pattern. A larger deployment should move to filtered, direct TablesDB queries in the service layer.
+- Reads are paginated 100 rows at a time to stay within the TablesDB `listRows` query limit.
 - Appwrite's Free plan supports up to 100 operations in one transaction. JëfPass fails a larger write closed rather than splitting one logical mutation into partial commits.
 - A record payload is limited to 60 KB by the adapter to stay below the table row size limit.
 - A pre-existing local `data/jefpass.sqlite` file is not automatically imported. An explicit migration/export/import is needed to move development records into Appwrite.
