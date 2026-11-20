@@ -267,7 +267,8 @@ function hydrateDatabase(database: DatabaseSync, rows: Record<string, unknown>[]
         .run(kind, documentId, record.payload);
     } else if (record.record_type === "rate_limit") {
       const value = JSON.parse(record.payload) as { count?: number; reset_at?: number };
-      if (!Number.isSafeInteger(value.count) || !Number.isSafeInteger(value.reset_at)) {
+      if (typeof value.count !== "number" || !Number.isSafeInteger(value.count) ||
+          typeof value.reset_at !== "number" || !Number.isSafeInteger(value.reset_at)) {
         throw new AppwriteDatabaseError("A JëfPass rate-limit row is malformed");
       }
       database.prepare("INSERT INTO rate_limits(id,count,reset_at) VALUES(?,?,?)")
