@@ -102,6 +102,29 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for data flow, routes and state
 3. **Complete** — the technician records completion. The same customer session acknowledges the work or raises a dispute.
 4. **Get paid, keep proof** — the technician requests an invoice from a receive-only wallet. Once the wallet reports settlement, JëfPass issues an immutable signed receipt that can stay private, be exported, or be shared on a public passport.
 
+### Testing Lightning Payments (Optional)
+
+JëfPass supports test Lightning payments through **Alby Hub** using Nostr Wallet Connect (NWC).
+
+1. Install the [Alby Browser Extension](https://getalby.com/) for the optional Nostr browser signer.
+2. Set up [Alby Hub](https://hub.getalby.com/) with a **Signet** Lightning wallet.
+3. Create a new NWC connection with only these permissions:
+   - `get_info`
+   - `make_invoice`
+   - `lookup_invoice`
+4. Copy the generated NWC connection URI (`nostr+walletconnect://...`).
+5. In JëfPass, open **Connections** and paste the URI.
+6. Configure the backend environment:
+
+   ```env
+   LIGHTNING_NETWORK=signet
+   NWC_ALLOWED_RELAYS=wss://relay.getalby.com/v1
+   ```
+
+7. Create a completed job, generate an invoice, pay it using another Signet wallet, and click **Check Payment**.
+
+**Note:** JëfPass currently supports Signet, Testnet, and Regtest — not Bitcoin Mainnet. The NWC connection must be receive-only and use an allowlisted relay. The Alby extension alone is sufficient for optional Nostr signing; Alby Hub is needed for Lightning invoice testing.
+
 ## Trust &amp; verification
 
 Trust in JëfPass is deliberately narrow and checkable:
