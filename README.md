@@ -106,8 +106,9 @@ Start from .env.example. The essential settings are:
 | NWC_ALLOWED_RELAYS | Exact comma-separated WSS relay allowlist. Empty means wallet connections fail closed |
 | NEXT_PUBLIC_NOSTR_RELAYS | Optional public relay list for worker commitment publication |
 | AI_ENABLED | Must be explicitly true before any provider call is made |
-| OPENAI_API_KEY | Optional server-side key; never expose it to the browser |
-| OPENAI_MODEL | Optional model identifier; defaults to gpt-4.1-mini |
+| AI_API_KEY | Server-side provider bearer token (e.g. Fireworks key); never expose it to the browser. Legacy alias: OPENAI_API_KEY |
+| AI_BASE_URL | OpenAI-compatible endpoint; defaults to https://api.openai.com/v1. Fireworks: https://api.fireworks.ai/inference/v1 |
+| AI_MODEL | Model identifier; defaults to gpt-4.1-mini. Legacy alias: OPENAI_MODEL |
 | JEFPASS_CLOUDFLARE | Set to true in the Cloudflare Worker; requires the DB D1 binding |
 
 For Cloudflare, keep the D1 binding named DB in wrangler.jsonc. The application creates its tables on the first API request and also includes a versioned D1 migration. Set APP_ORIGIN to the exact HTTPS Worker/custom-domain origin. The AES encryption key and Ed25519 receipt issuer key are stored in the private app_secrets D1 table; APP_ENCRYPTION_KEY may instead be supplied as a Cloudflare secret. Existing local SQLite files are not automatically imported.

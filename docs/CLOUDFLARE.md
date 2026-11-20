@@ -64,7 +64,8 @@ The wrangler.jsonc file contains:
 
 - DB: the D1 database binding.
 - JEFPASS_CLOUDFLARE=true: fail-closed mode if the binding is missing.
-- LIGHTNING_NETWORK=regtest and AI_ENABLED=false: safe demo defaults.
+- LIGHTNING_NETWORK=regtest: safe demo default.
+- AI_ENABLED=true, AI_BASE_URL and AI_MODEL: the "Help write scope" assistant (Fireworks by default). The provider key is a separate secret.
 - OpenNext static assets and image bindings.
 - WORKER_SELF_REFERENCE: the service binding used by OpenNext.
 
@@ -75,9 +76,11 @@ Set these Worker variables/secrets through Cloudflare:
 | APP_ORIGIN | Variable | Exact HTTPS application origin |
 | APP_ENCRYPTION_KEY | Optional secret | Optional 32-byte key as 64 hex characters or base64; omit to use the D1-backed persistent key |
 | NWC_ALLOWED_RELAYS | Variable | Exact allowlisted WSS relay URLs |
-| OPENAI_API_KEY | Secret | Optional server-side AI key |
+| AI_API_KEY | Secret | AI provider bearer token (e.g. Fireworks key). Legacy alias: OPENAI_API_KEY |
+| AI_ENABLED | Variable | true to enable the draft assistant; a key alone does nothing |
+| AI_BASE_URL | Variable | OpenAI-compatible endpoint, e.g. https://api.fireworks.ai/inference/v1 |
+| AI_MODEL | Variable | Model id, e.g. accounts/fireworks/models/llama-v3p1-8b-instruct |
 | LIGHTNING_NETWORK | Variable | regtest for the demo |
-| AI_ENABLED | Variable | false unless intentionally enabled |
 
 keep_vars is enabled so existing dashboard variables are retained when Wrangler deploys. Confirm APP_ORIGIN matches the actual production domain and remains HTTPS.
 

@@ -32,7 +32,9 @@
   "vars": {
     "JEFPASS_CLOUDFLARE": "true",
     "LIGHTNING_NETWORK": "regtest",
-    "AI_ENABLED": "false"
+    "AI_ENABLED": "true",
+    "AI_BASE_URL": "https://api.fireworks.ai/inference/v1",
+    "AI_MODEL": "accounts/fireworks/models/gpt-oss-120b"
   },
   "observability": {
     "enabled": true

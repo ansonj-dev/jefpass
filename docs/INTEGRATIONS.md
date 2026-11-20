@@ -89,7 +89,7 @@ AI is an optional writing helper only.
 - It can return title, description and category only.
 - The worker reviews and edits the result before saving.
 - No amount, approval, completion, receipt or payment fields are accepted.
-- No provider call happens unless AI_ENABLED=true and OPENAI_API_KEY are both set.
+- No provider call happens unless AI_ENABLED=true and AI_API_KEY (or legacy OPENAI_API_KEY) are both set.
 - The default behavior is a local non-AI draft.
 - Wallet URIs, private keys and seed phrases are not required or requested.
 
