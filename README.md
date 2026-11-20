@@ -33,7 +33,7 @@ This repository contains a working Next.js prototype, not a production-certified
 - **Genuine external wallet settlements: 0 in the recorded verification evidence.** The adapter implementation and its fixture tests do not prove live wallet interoperability.
 - External NIP-07 signing and public relay publication have not been independently demonstrated in the recorded evidence.
 - No user interviews, adoption metrics or field pilot are claimed.
-- No public production deployment is claimed.
+- A public Appwrite-hosted demo is live. Its account, session, job, receipt, wallet-metadata and rate-limit records use Appwrite TablesDB; this is not a production-certified payment service.
 
 See [VERIFICATION.md](VERIFICATION.md) and [LIMITATIONS.md](LIMITATIONS.md) for the evidence boundary. Never present a fixture, seeded record or screenshot as a real payment.
 
@@ -64,7 +64,7 @@ The offline feature is deliberately limited to local job drafts and queued job c
 
 - Next.js App Router and TypeScript run in the Node.js runtime.
 - API handlers enforce account ownership, request-origin checks, bounded JSON input and rate limits.
-- Node 24 built-in SQLite provides durable local storage for a single server instance.
+- Local development uses Node 24 built-in SQLite on disk. Appwrite Sites uses TablesDB as the persistent source of truth and a request-scoped SQLite compatibility layer so the existing synchronous service logic behaves the same.
 - NWC credentials are encrypted with AES-256-GCM. New versioned envelopes use worker-specific authenticated data; the reader remains compatible with the earlier envelope format.
 - Customer action proofs use JëfPass application-specific ephemeral Nostr kind 27236. They are not published to relays. NIP-98 reserves kind 27235 for HTTP authentication.
 - Worker receipt commitments use kind 30078 and are published only after an external NIP-07 signer signs them.
@@ -80,7 +80,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow, routes, state transitions 
 - A persistent writable local data directory
 - One running application instance
 
-SQLite uses Node's built-in node:sqlite API. This application is not designed for serverless ephemeral filesystems, multiple replicas or horizontally shared SQLite storage.
+SQLite uses Node's built-in node:sqlite API in local development. On Appwrite Sites, an API request receives a temporary SQLite mirror populated from TablesDB; changes are committed atomically back to TablesDB. The Site does not depend on a persistent local filesystem.
 
 ### Install and run
 
@@ -101,15 +101,18 @@ Start from .env.example. The essential settings are:
 |---|---|
 | DB_PATH | Persistent SQLite database path; defaults to ./data/jefpass.sqlite |
 | APP_ORIGIN | Exact browser-facing origin. Required in production and must use HTTPS |
-| APP_ENCRYPTION_KEY | Optional 32-byte key encoded as 64 hex characters or base64. If omitted, a persistent local key is generated beside the database |
+| APP_ENCRYPTION_KEY | Optional 32-byte key encoded as 64 hex characters or base64. Local mode generates a key beside the SQLite database; Appwrite mode stores the generated key in the private `secrets` table |
 | LIGHTNING_NETWORK | regtest by default; testnet and signet are supported when the wallet reports the same network. Mainnet is disabled |
 | NWC_ALLOWED_RELAYS | Exact comma-separated WSS relay allowlist. Empty means wallet connections fail closed |
 | NEXT_PUBLIC_NOSTR_RELAYS | Optional public relay list for worker commitment publication |
 | AI_ENABLED | Must be explicitly true before any provider call is made |
 | OPENAI_API_KEY | Optional server-side key; never expose it to the browser |
 | OPENAI_MODEL | Optional model identifier; defaults to gpt-4.1-mini |
+| APPWRITE_DATABASE_ID | Appwrite Site mode only; TablesDB database ID (`jefpass-db`) |
+| APPWRITE_TABLE_ID | Appwrite Site mode only; records table ID (`records`) |
+| APPWRITE_SECRETS_TABLE_ID | Appwrite Site mode only; private key table ID (`secrets`) |
 
-In production, set APP_ORIGIN to the exact HTTPS origin used by the browser, preserve the database and generated key files, restrict access to the persistent volume, and use encrypted backups. The app does not trust forwarded-host headers to infer the public origin.
+For Appwrite, set APP_ORIGIN to the exact HTTPS Site origin and the three APPWRITE_* IDs above. Appwrite injects the Site ID, project ID, regional API endpoint and a short-lived request-scoped API key; no long-lived API key belongs in the repository or browser. The adapter stores application rows and persistent signing/encryption keys in private TablesDB tables. Existing local SQLite files are not automatically imported.
 
 ### Checks
 
@@ -184,6 +187,7 @@ The project is MIT licensed. Contributions should preserve the separation betwee
 
 - [PROJECT_BRIEF.md](PROJECT_BRIEF.md) — product hypothesis and judging-criteria mapping
 - [ARCHITECTURE.md](ARCHITECTURE.md) — components, API routes and state transitions
+- [APPWRITE.md](APPWRITE.md) — Appwrite TablesDB schema, SSR credentials and persistence behavior
 - [INTEGRATIONS.md](INTEGRATIONS.md) — Lightning, Nostr, AI and offline integration contracts
 - [THREAT_MODEL.md](THREAT_MODEL.md) — threats, controls and residual risk
 - [VERIFICATION.md](VERIFICATION.md) — automated and manual evidence

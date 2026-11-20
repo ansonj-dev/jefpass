@@ -26,13 +26,15 @@ Use this checklist before any public release or hackathon submission. A checked 
 ## Runtime and deployment
 
 - [x] Node 24 is documented.
-- [x] Single-instance persistent SQLite architecture is documented.
+- [x] Local SQLite and Appwrite TablesDB persistence modes are documented.
 - [x] APP_ORIGIN is explicitly required in production and must use HTTPS.
-- [ ] Configure a host with persistent disk and one active app instance.
-- [ ] Preserve database, encryption key and issuer signing key together.
-- [ ] Configure TLS, filesystem ACLs and encrypted backups.
-- [ ] Perform an isolated backup/restore drill.
-- [ ] Do not claim a deployment until the public URL is actually reachable and tested.
+- [x] JëfPass Appwrite Site and private TablesDB resources are configured.
+- [x] Site has request-scoped TablesDB read/write scopes; no long-lived API key is stored.
+- [x] Appwrite demo URL is deployed and reachable.
+- [ ] Complete Appwrite adapter CI and live register/login/job smoke tests.
+- [ ] Configure trusted NWC relays and perform a genuine external test-network payment.
+- [ ] Perform an isolated Appwrite database and secrets backup/restore drill.
+- [ ] Load-test the full-table compatibility adapter before larger use.
 
 ## Wallet and protocol evidence
 

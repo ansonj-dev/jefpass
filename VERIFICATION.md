@@ -1,6 +1,6 @@
 # JëfPass Verification Report
 
-**Updated:** 19 November 2026  
+**Updated:** 20 November 2026  
 **Repository:** https://github.com/ansonj-dev/jefpass  
 **Verification environment:** GitHub Actions, Ubuntu runner, Node.js 24.22.2, npm 11.19.1  
 **Code verification commit:** `5e2d340c83d2412591ab9aea5457fc51f94d5a92`  
@@ -8,7 +8,7 @@
 
 ## Automated CI result
 
-**CI status: PASSED**
+**Previous application CI: PASSED. Appwrite persistence changes require the new workflow run below.**
 
 GitHub Actions successfully completed all configured steps on 19 November 2026:
 
@@ -24,7 +24,7 @@ The code verification commit above passed GitHub Actions on 19 November 2026. Th
 
 ## Test coverage
 
-The 128-test suite covers:
+The previously verified 128-test suite covers:
 
 | Test file / slice | Passing tests | Boundary |
 |---|---:|---|
@@ -63,12 +63,18 @@ The earlier development verification recorded this local unpaid journey:
 
 This local browser evidence is historical development evidence, not a test rerun by the GitHub Actions runner and not physical-device or customer usability certification.
 
+## Appwrite database deployment
+
+The Appwrite project now has a private TablesDB database (`jefpass-db`) with `records` and `secrets` tables. The Site has `tables.read` and `tables.write` scopes. The new Appwrite adapter tests exercise persistence across separate SSR requests, stable key reuse and rollback behavior. The workflow run for this revision must be confirmed before treating those tests as passed.
+
+The public Appwrite deployment is a demo, not a production-certified financial service. Local SQLite files are not automatically imported into the hosted database.
+
 ## External proof blockers
 
 - **Genuine external Lightning settlements: 0 in the recorded evidence.** The code implements a receive-only NWC adapter and settlement checks, but the adapter has not yet been demonstrated against a genuine receiving wallet and separate payer wallet.
 - External NIP-07 worker signing and relay publication have not been exercised in the recorded evidence.
 - No user interviews, adoption metrics or field pilot are claimed.
-- No public production deployment or disaster-recovery exercise is claimed.
+- An Appwrite-hosted public demo is deployed; a production deployment and disaster-recovery exercise are not claimed.
 - AI provider quality, cost and compatibility have not been validated; AI is disabled by default.
 
 ## Important trust boundaries
@@ -79,7 +85,7 @@ This local browser evidence is historical development evidence, not a test rerun
 - Customer Nostr signatures establish control of a browser key, not legal identity.
 - Worker receipt signatures require an external NIP-07 signer. A server issuer signature is not a worker signature.
 - Offline support covers non-financial drafts only. Payments and customer actions require connectivity.
-- SQLite requires one persistent server instance; the current app is not designed for serverless ephemeral storage or multiple replicas.
+- Local SQLite requires one persistent server instance. The Appwrite demo uses TablesDB and ephemeral per-request storage, but the compatibility adapter reads the full records table and needs scale testing.
 
 ## Reproduction
 
@@ -95,4 +101,4 @@ Use Node.js 24.x. Do not skip installation scripts; the SDK patch is required.
 
 ## Evidence statement
 
-JëfPass has a CI-verified application build and automated test suite. It does not yet have externally verified wallet settlement, user-validated impact or a production deployment. Those are next release gates, not claims made by this report.
+JëfPass has a CI-verified application build and a live Appwrite demo backed by TablesDB. This revision's CI result must be checked before treating the Appwrite adapter tests as passed. The project still lacks externally verified wallet settlement, user-validated impact and production certification. Those are next release gates, not claims made by this report.

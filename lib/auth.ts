@@ -3,7 +3,7 @@ import { linkSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { databasePath, deleteDocument, getDb, insertDocument, readDocument, transaction, writeDocument } from "./db";
+import { databasePath, deleteDocument, getDb, getRequestSecret, insertDocument, isRemoteDatabaseRequest, readDocument, transaction, writeDocument } from "./db";
 import type { Worker } from "./types";
 
 export class ApiError extends Error {
@@ -74,6 +74,11 @@ export function logout(token?: string): void {
 }
 
 export function installSecret(filename: string, generate: () => Buffer): Buffer {
+  if (isRemoteDatabaseRequest()) {
+    const secret = getRequestSecret(filename);
+    if (!secret) throw new Error(`Persistent Appwrite secret "${filename}" is unavailable`);
+    return secret;
+  }
   getDb();
   const path = join(dirname(databasePath()), filename);
   try { return readFileSync(path); } catch (error) {
@@ -130,14 +135,24 @@ export function decryptWallet(encrypted: string, workerId = "legacy"): string {
 }
 
 export function rateLimit(key: string, limit = 120, intervalMs = 60_000): void {
+  const remote = isRemoteDatabaseRequest();
+  // A single global counter would serialize every Appwrite request and create
+  // unnecessary database writes. Per-caller and per-action limits remain.
+  if (remote && key === "global") return;
+
   transaction(() => {
     const database = getDb();
     const now = Date.now();
-    database.prepare("DELETE FROM rate_limits WHERE reset_at <= ?").run(now);
-    const row = database.prepare("SELECT count FROM rate_limits WHERE id = ?").get(key);
+    if (!remote) database.prepare("DELETE FROM rate_limits WHERE reset_at <= ?").run(now);
+    let row = database.prepare("SELECT count, reset_at FROM rate_limits WHERE id = ?").get(key) as
+      { count: number; reset_at: number } | undefined;
+    if (remote && row && Number(row.reset_at) <= now) {
+      database.prepare("DELETE FROM rate_limits WHERE id = ?").run(key);
+      row = undefined;
+    }
     if (row && Number(row.count) >= limit) throw new ApiError(429, "Too many requests; try again later");
     database.prepare(`INSERT INTO rate_limits(id,count,reset_at) VALUES(?,1,?)
-      ON CONFLICT(id) DO UPDATE SET count = count + 1`).run(key, now + intervalMs);
+      ON CONFLICT(id) DO UPDATE SET count = count + 1, reset_at = excluded.reset_at`).run(key, now + intervalMs);
   });
 }
 

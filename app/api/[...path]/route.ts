@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { withRequestDatabase } from "../../../lib/db";
 import { suggestDraft } from "../../../lib/ai";
 import { ApiError, SESSION_COOKIE, SESSION_SECONDS, boundedJson, login, logout, rateLimit, register, requestOrigin, sessionWorker, validateMutation } from "../../../lib/auth";
 import { attachNostrReceipt, getReceipt, verifyReceipt } from "../../../lib/receipt";
@@ -98,6 +99,16 @@ export async function handleRequest(request: Request): Promise<Response> {
   }
 }
 
-export const GET = handleRequest;
-export const POST = handleRequest;
-export const DELETE = handleRequest;
+async function dispatchRequest(request: Request): Promise<Response> {
+  try {
+    return await withRequestDatabase(request, () => handleRequest(request));
+  } catch (error) {
+    // Never fall back to per-instance filesystem storage on Appwrite Sites.
+    console.error("JëfPass persistent database request failed", error);
+    return json({ error: "The application database is temporarily unavailable. Please retry." }, 503);
+  }
+}
+
+export const GET = dispatchRequest;
+export const POST = dispatchRequest;
+export const DELETE = dispatchRequest;

@@ -9,7 +9,8 @@ flowchart TD
   W[Worker browser] --> APP[Next.js Node application]
   C[Customer browser] --> APP
   W --> IDB[IndexedDB: non-financial drafts]
-  APP --> DB[Persistent SQLite]
+  APP --> LOCALDB[Local SQLite file]
+  APP --> AWDB[Appwrite TablesDB via request-scoped key]
   APP --> NWC[NWC client through allowlisted WSS relay]
   NWC --> WALLET[Worker receiving wallet]
   PAYER[Customer Lightning wallet] --> WALLET
@@ -23,15 +24,15 @@ flowchart TD
 
 - Next.js App Router with TypeScript.
 - Node.js 24 runtime; API routes explicitly use the Node.js runtime.
-- Node built-in SQLite database via node:sqlite.
-- A single application process and one persistent local database file.
+- Local development uses Node built-in SQLite via node:sqlite and a persistent local database file.
+- Appwrite Sites uses Appwrite TablesDB as its durable source of truth. Each API request loads a transaction-scoped snapshot into an isolated in-memory SQLite database, runs the existing synchronous service code, then commits changed records atomically to TablesDB.
 - NWC client adapter using the pinned @getalby/sdk 9.0.0.
 - BOLT11 invoice decoding and validation using bolt11.
 - nostr-tools for event construction and signature verification.
 - idb-keyval for local non-financial drafts.
 - Zod for strict request validation.
 
-This is not compatible with an ephemeral serverless filesystem or multiple independent replicas that each have their own SQLite file. A production deployment needs a single durable instance or a deliberate database migration.
+The Appwrite runtime does not rely on persistent local files. Appwrite transactions and request-scoped database snapshots are used for the hosted demo. The adapter currently reads the records table for each API request and is a compatibility bridge, not a high-scale query architecture; direct service-level TablesDB queries and pagination remain future optimization work.
 
 ## 3. Application routes
 
@@ -63,9 +64,11 @@ This is not compatible with an ephemeral serverless filesystem or multiple indep
 
 ## 4. Persistence and secrets
 
-SQLite stores documents grouped by type and identifier, plus rate-limit counters. Transactions use BEGIN IMMEDIATE and synchronous commits. Database writes must remain synchronous; external network operations occur outside database transactions.
+The application keeps its existing synchronous SQLite data contract: documents are keyed by kind and identifier, with a separate rate-limit table. Local development uses `data/jefpass.sqlite`. On Appwrite Sites, each API request starts an Appwrite TablesDB transaction, loads the `records` table into an isolated in-memory SQLite database, runs the existing service code synchronously, then stages creates/updates/deletes and commits them atomically. The request's temporary SQLite database is discarded after the response.
 
-The default database is data/jefpass.sqlite. Runtime files and generated secrets must not be committed. The generated application encryption key and issuer private key live beside the database and must be backed up securely with it.
+The Appwrite database `jefpass-db` contains two private tables. `records` stores application documents and rate-limit counters (`record_type`, `record_key`, JSON `payload`). `secrets` stores the persistent AES-256 key and Ed25519 issuer private key. Neither table grants public row/table permissions. Appwrite's request-scoped Site key, injected as `x-appwrite-key`, is used only on the server; no static API key is required.
+
+The adapter uses one Appwrite transaction for each request's data snapshot and writes. This preserves the synchronous SQLite service behavior while preventing writes from being left only on an ephemeral Site filesystem. Existing local SQLite files are not automatically imported into Appwrite. See `APPWRITE.md` for the schema and deployment settings.
 
 ### Wallet credential encryption
 
@@ -75,11 +78,10 @@ The decryptor retains support for the earlier unversioned envelope so existing i
 
 ### Database assumptions
 
-- Persistent writable local volume.
-- One active application instance.
-- Local SQLite is not shared across replicas.
-- SQLite database, WAL, journals, exports and backups need operating-system and storage-level protection.
-- Restore procedures must preserve both the database and associated encryption/issuer key files.
+- Local mode: preserve the SQLite database and its generated key files together.
+- Appwrite mode: the records and secret keys live in private TablesDB tables; the SSR Site uses short-lived request-scoped credentials.
+- Appwrite mode currently loads the full records table into a request-local memory database. Keep the prototype dataset modest; optimize to direct filtered TablesDB queries before scaling.
+- A request may stage at most 100 changed rows on the current Free plan transaction limit; a larger mutation fails closed rather than partially writing.
 
 ## 5. Worker and customer workflow
 
@@ -236,12 +238,13 @@ Residual risks include a trusted single application host, plaintext job data and
 Before deployment:
 1. Use Node.js 24.x.
 2. Set APP_ORIGIN to the exact HTTPS browser-facing origin.
-3. Use persistent storage and a single instance.
-4. Preserve the SQLite database, encryption key and issuer key together.
-5. Restrict filesystem permissions and use encrypted backups.
+3. Configure the Appwrite TablesDB database ID, records table ID and private secrets table ID.
+4. Grant the SSR Site `tables.read` and `tables.write` scopes and rely on Appwrite's per-request ephemeral key.
+5. Keep the `records` and `secrets` tables private; do not add public table permissions.
+6. Back up the Appwrite database and protect the issuer/encryption keys.
 6. Configure exact trusted WSS relays for NWC.
 7. Leave mainnet disabled.
 8. Run npm ci, tests, typecheck, production build and dependency audit.
 9. Test a genuine external test-network wallet payment before making a live-payment claim.
 
-See README.md, INTEGRATIONS.md, THREAT_MODEL.md and PUBLICATION_CHECKLIST.md.
+See README.md, APPWRITE.md, INTEGRATIONS.md, THREAT_MODEL.md and PUBLICATION_CHECKLIST.md.
