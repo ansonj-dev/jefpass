@@ -34,5 +34,7 @@ jobs:
         run: npm run typecheck
       - name: Production build
         run: npm run build
+      - name: Build Cloudflare Worker with OpenNext
+        run: npm run cf:build
       - name: Check production dependency advisories
         run: npm audit --omit=dev --audit-level=moderate

@@ -12,7 +12,11 @@
     "setup": "npm install",
     "demo:seed": "node scripts/seed-demo.mjs",
     "verify:bundle": "node scripts/verify-bundle.mjs",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "cf:build": "npx --yes --package=@opennextjs/cloudflare@1.20.17 opennextjs-cloudflare build",
+    "cf:preview": "npm run cf:build && npx --yes --package=wrangler@4.165.0 wrangler dev",
+    "cf:deploy": "npm run cf:migrate && npm run cf:build && npx --yes --package=wrangler@4.165.0 wrangler deploy",
+    "cf:migrate": "npx --yes --package=wrangler@4.165.0 wrangler d1 migrations apply jefpass-db --remote"
   },
   "dependencies": {
     "@getalby/sdk": "9.0.0",

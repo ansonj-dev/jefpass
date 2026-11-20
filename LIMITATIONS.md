@@ -14,7 +14,7 @@ This file separates implemented behavior from unverified claims and future work.
 | Offline | IndexedDB non-financial drafts and sync | Offline payments, signature queue, service-worker app shell or guaranteed offline reload |
 | AI | Strict draft output and local fallback | Paid provider quality, cost or field usefulness |
 | UX | English/French and browser checks documented | Physical-device accessibility, low-bandwidth and usability pilot |
-| Operations | Local SQLite mode; Appwrite TablesDB persistence adapter and live SSR demo; CI workflow | External wallet proof, scale testing, independent security review and disaster-recovery drill |
+| Operations | Local SQLite mode; Cloudflare Workers and D1 persistence adapter; CI workflow | External wallet proof, scale testing, independent security review and disaster-recovery drill |
 
 ## Payment safety boundaries
 
@@ -38,12 +38,12 @@ A signature does not prove that a repair was performed well. Customer key contro
 
 ## Data and deployment boundaries
 
-- Local development uses a persistent SQLite file. Appwrite Sites uses TablesDB as the durable source of truth through a request-scoped compatibility adapter.
-- The Appwrite adapter currently reads the records table for each API request, so it is intended for a small prototype dataset, not high-volume production traffic.
-- Appwrite transactions currently cap a single request at 100 changed rows on the Free plan; an oversized mutation fails closed.
-- Row payloads are capped at 60 KB by the adapter.
-- Existing local SQLite databases are not automatically imported into Appwrite.
-- Appwrite's private secrets table stores the persistent wallet-encryption and receipt-issuer keys. Keep that table private and include it in backups.
+- Local development uses a persistent SQLite file. Cloudflare Workers use D1 as the durable source of truth through a request-scoped compatibility adapter.
+- The Cloudflare adapter currently reads all documents and rate-limit rows for each API request, so it is intended for a small prototype dataset, not high-volume production traffic.
+- The application imposes a safety cap of 100 D1 statements per request batch; an oversized mutation fails closed. This is an application limit, not a Cloudflare D1 platform limit.
+- D1 requests hydrate a snapshot rather than holding a read transaction across application logic. Concurrent writes to the same existing record can be last-commit-wins until optimistic version checks or conditional updates are added.
+- Existing local SQLite databases are not automatically imported into Cloudflare D1.
+- The private app_secrets D1 table stores the persistent wallet-encryption and receipt-issuer keys. Keep it accessible only through the Worker binding and include it in backups.
 - Local database rows, WAL/journals, exports and backups are not wholly encrypted by the NWC credential protection.
 - The current issuer-key design has no managed rotation or historical key registry.
 - NWC encryption is worker-bound for new v1 records; legacy records remain readable until saved again.

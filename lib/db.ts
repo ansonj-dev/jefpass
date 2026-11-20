@@ -1,39 +1,66 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-type RemoteRecord = {
-  record_type: string;
-  record_key: string;
-  payload: string;
+type D1DocumentRow = { kind: string; id: string; body: string };
+type D1RateLimitRow = { id: string; count: number; reset_at: number };
+type D1SecretRow = { name: string; value: string };
+
+type D1Result<T = unknown> = { results?: T[]; success?: boolean };
+type D1PreparedStatement = {
+  bind(...values: unknown[]): D1PreparedStatement;
+  all<T = Record<string, unknown>>(): Promise<D1Result<T>>;
+  run<T = unknown>(): Promise<D1Result<T>>;
+};
+type D1Binding = {
+  prepare(sql: string): D1PreparedStatement;
+  batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
+  exec(sql: string): Promise<unknown>;
+};
+
+declare global {
+  // Set by worker.js before OpenNext dispatches each request.
+  // The binding is a capability supplied by Cloudflare, never by the browser.
+  var __JEFPASS_D1__: D1Binding | undefined;
+  var __JEFPASS_D1_SCHEMA_READY__: boolean | undefined;
+}
+
+type D1Operation = {
+  sql: string;
+  values: unknown[];
+  label: "document-insert" | "other";
 };
 
 type RemoteContext = {
   database: DatabaseSync;
-  endpoint: string;
-  projectId: string;
-  apiKey: string;
-  databaseId: string;
-  tableId: string;
-  secretsTableId: string;
-  baseline: Map<string, RemoteRecord>;
+  d1: D1Binding;
   secrets: Map<string, Buffer>;
-  transactionId?: string;
-  transactionFinished: boolean;
+  operations: D1Operation[];
 };
 
 const requestContext = new AsyncLocalStorage<RemoteContext>();
 const databases = new Map<string, DatabaseSync>();
-// TablesDB listRows caps Query.limit at 100. Keep this adapter within the service limit.
-const PAGE_SIZE = 100;
-const MAX_TRANSACTION_OPERATIONS = 100;
+const MAX_D1_BATCH_OPERATIONS = 100;
 
-export class AppwriteDatabaseError extends Error {
-  constructor(message: string, public readonly status?: number) {
+const D1_SCHEMA = [
+  "CREATE TABLE IF NOT EXISTS documents (kind TEXT NOT NULL, id TEXT NOT NULL, body TEXT NOT NULL CHECK(json_valid(body)), PRIMARY KEY(kind, id));",
+  "CREATE TABLE IF NOT EXISTS rate_limits (id TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at INTEGER NOT NULL);",
+  "CREATE TABLE IF NOT EXISTS app_secrets (name TEXT PRIMARY KEY, value TEXT NOT NULL);",
+].join("\n");
+
+export class D1DatabaseUnavailableError extends Error {
+  constructor(message = "The Cloudflare D1 binding is unavailable") {
     super(message);
-    this.name = "AppwriteDatabaseError";
+    this.name = "D1DatabaseUnavailableError";
+  }
+}
+
+export class D1AccountConflictError extends Error {
+  constructor() {
+    super("Email is already registered");
+    this.name = "D1AccountConflictError";
   }
 }
 
@@ -58,9 +85,204 @@ function createDatabase(filename: string): DatabaseSync {
   return database;
 }
 
+function documentKey(kind: string, id: string): string {
+  return kind + "\u0000" + id;
+}
+
+function cloneMap<T>(source: Map<string, T>): Map<string, T> {
+  return new Map(source);
+}
+
+/**
+ * Implements only the small synchronous SQL surface used by the existing
+ * service layer. All reads are hydrated from D1 at request start, and every
+ * write is recorded as a prepared D1 statement for one atomic D1 batch.
+ *
+ * This compatibility layer deliberately does not expose a general SQL engine.
+ * Add a matching implementation and a test whenever the service SQL changes.
+ */
+class D1SynchronousDatabase {
+  private documents = new Map<string, D1DocumentRow>();
+  private rateLimits = new Map<string, D1RateLimitRow>();
+  private snapshots: Array<{
+    documents: Map<string, D1DocumentRow>;
+    rateLimits: Map<string, D1RateLimitRow>;
+    operationLength: number;
+  }> = [];
+  readonly operations: D1Operation[] = [];
+
+  constructor(documents: D1DocumentRow[], rateLimits: D1RateLimitRow[]) {
+    for (const row of documents) this.documents.set(documentKey(row.kind, row.id), { ...row });
+    for (const row of rateLimits) this.rateLimits.set(row.id, { ...row });
+  }
+
+  exec(sql: string): void {
+    const normalized = sql.trim().replace(/\s+/g, " ").toUpperCase();
+    if (normalized === "BEGIN IMMEDIATE" || normalized === "BEGIN") {
+      this.snapshots.push({
+        documents: cloneMap(this.documents),
+        rateLimits: cloneMap(this.rateLimits),
+        operationLength: this.operations.length,
+      });
+      return;
+    }
+    if (normalized === "COMMIT") {
+      if (!this.snapshots.length) throw new Error("No active transaction to commit");
+      this.snapshots.pop();
+      return;
+    }
+    if (normalized === "ROLLBACK") {
+      const snapshot = this.snapshots.pop();
+      if (!snapshot) throw new Error("No active transaction to roll back");
+      this.documents = snapshot.documents;
+      this.rateLimits = snapshot.rateLimits;
+      this.operations.length = snapshot.operationLength;
+      return;
+    }
+    throw new Error("Unsupported SQL command in the Cloudflare D1 compatibility layer");
+  }
+
+  prepare(sql: string): ReturnType<DatabaseSync["prepare"]> {
+    const database = this;
+    const statement = {
+      get: (...values: unknown[]) => database.get(sql, values),
+      all: (...values: unknown[]) => database.all(sql, values),
+      run: (...values: unknown[]) => database.run(sql, values),
+    };
+    return statement as unknown as ReturnType<DatabaseSync["prepare"]>;
+  }
+
+  private get(sql: string, values: unknown[]): unknown {
+    const normalized = sql.replace(/\s+/g, " ").trim().toLowerCase();
+    if (normalized === "select body from documents where kind = ? and id = ?") {
+      const row = this.documents.get(documentKey(String(values[0]), String(values[1])));
+      return row ? { body: row.body } : undefined;
+    }
+    if (normalized === "select count, reset_at from rate_limits where id = ?") {
+      const row = this.rateLimits.get(String(values[0]));
+      return row ? { count: row.count, reset_at: row.reset_at } : undefined;
+    }
+    throw new Error("Unsupported SELECT query in the Cloudflare D1 compatibility layer");
+  }
+
+  private all(sql: string, values: unknown[]): unknown[] {
+    const normalized = sql.replace(/\s+/g, " ").trim().toLowerCase();
+    if (normalized === "select body from documents where kind = ? order by rowid") {
+      const kind = String(values[0]);
+      return [...this.documents.values()]
+        .filter((row) => row.kind === kind)
+        .map((row) => ({ body: row.body }));
+    }
+    throw new Error("Unsupported SELECT query in the Cloudflare D1 compatibility layer");
+  }
+
+  private queue(sql: string, values: unknown[], label: D1Operation["label"] = "other"): void {
+    this.operations.push({ sql, values: [...values], label });
+  }
+
+  private run(sql: string, values: unknown[]): { changes: number; lastInsertRowid: number } {
+    const normalized = sql.replace(/\s+/g, " ").trim().toLowerCase();
+
+    if (normalized === "insert into documents(kind,id,body) values(?,?,?)") {
+      const [kindValue, idValue, bodyValue] = values;
+      const kind = String(kindValue);
+      const id = String(idValue);
+      const body = String(bodyValue);
+      const key = documentKey(kind, id);
+      if (this.documents.has(key)) {
+        throw new Error("UNIQUE constraint failed: documents.kind, documents.id");
+      }
+      this.documents.set(key, { kind, id, body });
+      this.queue("INSERT INTO documents(kind,id,body) VALUES(?,?,?)", [kind, id, body], "document-insert");
+      return { changes: 1, lastInsertRowid: 0 };
+    }
+
+    if (normalized === "insert into documents(kind,id,body) values(?,?,?) on conflict(kind,id) do update set body = excluded.body") {
+      const [kindValue, idValue, bodyValue] = values;
+      const kind = String(kindValue);
+      const id = String(idValue);
+      const body = String(bodyValue);
+      const key = documentKey(kind, id);
+      const changes = 1;
+      this.documents.set(key, { kind, id, body });
+      this.queue(
+        "INSERT INTO documents(kind,id,body) VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET body = excluded.body",
+        [kind, id, body],
+      );
+      return { changes, lastInsertRowid: 0 };
+    }
+
+    if (normalized === "delete from documents where kind = ? and id = ?") {
+      const [kind, id] = values.map(String);
+      const changes = this.documents.delete(documentKey(kind, id)) ? 1 : 0;
+      this.queue("DELETE FROM documents WHERE kind = ? AND id = ?", [kind, id]);
+      return { changes, lastInsertRowid: 0 };
+    }
+
+    if (normalized === "delete from documents where kind = 'nonces' and json_extract(body, '$.expiresat') <= ?") {
+      const expiresBefore = Number(values[0]);
+      let changes = 0;
+      for (const [key, row] of this.documents) {
+        if (row.kind !== "nonces") continue;
+        const value = JSON.parse(row.body) as { expiresAt?: number };
+        if (typeof value.expiresAt === "number" && value.expiresAt <= expiresBefore) {
+          this.documents.delete(key);
+          this.queue("DELETE FROM documents WHERE kind = ? AND id = ?", [row.kind, row.id]);
+          changes += 1;
+        }
+      }
+      return { changes, lastInsertRowid: 0 };
+    }
+
+    if (normalized === "delete from rate_limits where reset_at <= ?") {
+      const cutoff = Number(values[0]);
+      let changes = 0;
+      for (const [id, row] of this.rateLimits) {
+        if (row.reset_at <= cutoff) {
+          this.rateLimits.delete(id);
+          changes += 1;
+        }
+      }
+      this.queue("DELETE FROM rate_limits WHERE reset_at <= ?", [cutoff]);
+      return { changes, lastInsertRowid: 0 };
+    }
+
+    if (normalized === "delete from rate_limits where id = ?") {
+      const id = String(values[0]);
+      const changes = this.rateLimits.delete(id) ? 1 : 0;
+      this.queue("DELETE FROM rate_limits WHERE id = ?", [id]);
+      return { changes, lastInsertRowid: 0 };
+    }
+
+    if (normalized === "insert into rate_limits(id,count,reset_at) values(?,1,?) on conflict(id) do update set count = count + 1, reset_at = excluded.reset_at") {
+      const id = String(values[0]);
+      const resetAt = Number(values[1]);
+      const previous = this.rateLimits.get(id);
+      this.rateLimits.set(id, { id, count: (previous?.count ?? 0) + 1, reset_at: resetAt });
+      this.queue(
+        "INSERT INTO rate_limits(id,count,reset_at) VALUES(?,1,?) ON CONFLICT(id) DO UPDATE SET count = count + 1, reset_at = excluded.reset_at",
+        [id, resetAt],
+      );
+      return { changes: 1, lastInsertRowid: 0 };
+    }
+
+    throw new Error("Unsupported SQL statement in the Cloudflare D1 compatibility layer");
+  }
+
+  close(): void {
+    this.documents.clear();
+    this.rateLimits.clear();
+    this.operations.length = 0;
+    this.snapshots.length = 0;
+  }
+}
+
 export function getDb(): DatabaseSync {
   const active = requestContext.getStore();
   if (active) return active.database;
+  if (process.env.JEFPASS_CLOUDFLARE === "true") {
+    throw new D1DatabaseUnavailableError("D1 database access is only available inside a Cloudflare request context");
+  }
 
   const filename = databasePath();
   const existing = databases.get(filename);
@@ -80,270 +302,70 @@ export function getRequestSecret(filename: string): Buffer | undefined {
   return secret ? Buffer.from(secret) : undefined;
 }
 
-function rowId(recordType: string, recordKey: string): string {
-  return createHash("sha256").update(`${recordType}:${recordKey}`).digest("hex").slice(0, 36);
-}
-
-function endpointUrl(context: RemoteContext, path: string): string {
-  return `${context.endpoint.replace(/\/+$/, "")}${path}`;
-}
-
-async function appwriteRequest<T>(
-  context: RemoteContext,
-  path: string,
-  method = "GET",
-  body?: unknown,
-): Promise<T> {
-  const response = await fetch(endpointUrl(context, path), {
-    method,
-    headers: {
-      "X-Appwrite-Project": context.projectId,
-      "X-Appwrite-Key": context.apiKey,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    cache: "no-store",
-  });
-
-  const text = await response.text();
-  let parsed: unknown;
-  try { parsed = text ? JSON.parse(text) : {}; } catch { parsed = { message: text }; }
-  if (!response.ok) {
-    const details = parsed && typeof parsed === "object" && "message" in parsed
-      ? String((parsed as { message: unknown }).message)
-      : "Appwrite request failed";
-    throw new AppwriteDatabaseError(`Appwrite TablesDB request failed (${response.status}): ${details}`, response.status);
-  }
-  return parsed as T;
-}
-
-async function listTableRows(context: RemoteContext, tableId: string, transactionId?: string): Promise<Record<string, unknown>[]> {
-  const output: Record<string, unknown>[] = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const query = new URLSearchParams();
-    query.append("queries[]", `limit(${PAGE_SIZE})`);
-    if (cursor) query.append("queries[]", `cursorAfter("${cursor}")`);
-    query.set("total", "false");
-    if (transactionId) query.set("transactionId", transactionId);
-    const result = await appwriteRequest<{ rows?: Record<string, unknown>[] }>(
-      context,
-      `/tablesdb/${encodeURIComponent(context.databaseId)}/tables/${encodeURIComponent(tableId)}/rows?${query.toString()}`,
-    );
-    const rows = Array.isArray(result.rows) ? result.rows : [];
-    output.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
-    const lastId = rows[rows.length - 1]?.$id;
-    if (typeof lastId !== "string" || lastId === cursor) {
-      throw new AppwriteDatabaseError("Appwrite returned an invalid pagination cursor");
-    }
-    cursor = lastId;
-  }
-  return output;
-}
-
-function rowData(row: Record<string, unknown>): Record<string, unknown> {
-  const data = row.data;
-  return data && typeof data === "object" && !Array.isArray(data)
-    ? data as Record<string, unknown>
-    : row;
-}
-
-async function createTransaction(context: RemoteContext): Promise<string> {
-  const transaction = await appwriteRequest<{ $id?: string }>(context, "/tablesdb/transactions", "POST", { ttl: 60 });
-  if (!transaction.$id) throw new AppwriteDatabaseError("Appwrite did not return a transaction ID");
-  return transaction.$id;
-}
-
-async function stageOperations(
-  context: RemoteContext,
-  transactionId: string,
-  operations: Record<string, unknown>[],
-): Promise<void> {
-  if (!operations.length) return;
-  if (operations.length > MAX_TRANSACTION_OPERATIONS) {
-    throw new AppwriteDatabaseError(
-      `This request needs ${operations.length} database changes; the current Appwrite transaction limit is ${MAX_TRANSACTION_OPERATIONS}. Retry after the stale records are cleaned up.`,
-    );
-  }
-  await appwriteRequest(
-    context,
-    `/tablesdb/transactions/${encodeURIComponent(transactionId)}/operations`,
-    "POST",
-    { operations },
-  );
-}
-
-async function finishTransaction(context: RemoteContext, transactionId: string, commit: boolean): Promise<void> {
-  await appwriteRequest(
-    context,
-    `/tablesdb/transactions/${encodeURIComponent(transactionId)}`,
-    "PATCH",
-    commit ? { commit: true } : { rollback: true },
-  );
-}
-
-async function persistSecretRows(context: RemoteContext, entries: { name: string; value: Buffer }[]): Promise<void> {
-  if (!entries.length) return;
-  const transactionId = await createTransaction(context);
-  const operations = entries.map(({ name, value }) => ({
-    action: "create",
-    databaseId: context.databaseId,
-    tableId: context.secretsTableId,
-    rowId: rowId("secret", name),
-    data: { secret_name: name, secret_value: value.toString("base64") },
-  }));
-  try {
-    await stageOperations(context, transactionId, operations);
-    await finishTransaction(context, transactionId, true);
-  } catch (error) {
-    try { await finishTransaction(context, transactionId, false); } catch { /* The transaction may already be committed or expired. */ }
-    // A concurrent SSR instance may have initialized the same key first. Only
-    // accept that outcome after re-reading the committed secret rows.
-    const rows = await listTableRows(context, context.secretsTableId);
-    for (const row of rows) {
-      const data = rowData(row);
-      if (typeof data.secret_name === "string" && typeof data.secret_value === "string") {
-        context.secrets.set(data.secret_name, Buffer.from(data.secret_value, "base64"));
+async function loadPersistentSecrets(d1: D1Binding, secrets: Map<string, Buffer>): Promise<void> {
+  const load = async () => {
+    const result = await d1.prepare("SELECT name, value FROM app_secrets").all<D1SecretRow>();
+    for (const row of result.results ?? []) {
+      if (typeof row.name === "string" && typeof row.value === "string") {
+        const value = Buffer.from(row.value, "base64");
+        if (value.length) secrets.set(row.name, value);
       }
     }
-    if (entries.every((entry) => context.secrets.has(entry.name))) return;
-    throw error;
-  }
-  for (const entry of entries) context.secrets.set(entry.name, Buffer.from(entry.value));
-}
+  };
 
-async function loadSecrets(context: RemoteContext): Promise<void> {
-  const rows = await listTableRows(context, context.secretsTableId);
-  for (const row of rows) {
-    const data = rowData(row);
-    if (typeof data.secret_name !== "string" || typeof data.secret_value !== "string") continue;
-    const value = Buffer.from(data.secret_value, "base64");
-    if (value.length) context.secrets.set(data.secret_name, value);
-  }
+  await load();
 
-  const missing: { name: string; value: Buffer }[] = [];
-  if (!process.env.APP_ENCRYPTION_KEY && !context.secrets.has("key")) {
+  const missing: Array<{ name: string; value: Buffer }> = [];
+  if (!process.env.APP_ENCRYPTION_KEY && !secrets.has("key")) {
     missing.push({ name: "key", value: randomBytes(32) });
   }
-  if (!context.secrets.has("issuer-private.pem")) {
+  if (!secrets.has("issuer-private.pem")) {
     const pair = generateKeyPairSync("ed25519");
     missing.push({
       name: "issuer-private.pem",
       value: Buffer.from(pair.privateKey.export({ type: "pkcs8", format: "pem" })),
     });
   }
-  await persistSecretRows(context, missing);
-  if (!process.env.APP_ENCRYPTION_KEY && context.secrets.get("key")?.length !== 32) {
-    throw new AppwriteDatabaseError("The persistent JëfPass encryption key is missing or invalid");
+
+  if (missing.length) {
+    await d1.batch(missing.map(({ name, value }) =>
+      d1.prepare("INSERT OR IGNORE INTO app_secrets(name,value) VALUES(?,?)")
+        .bind(name, value.toString("base64")),
+    ));
+    // Another isolate may have won the first-write race. Always reload the
+    // committed values so this request uses the same durable keys as others.
+    secrets.clear();
+    await load();
   }
-  if (!context.secrets.has("issuer-private.pem")) {
-    throw new AppwriteDatabaseError("The persistent JëfPass receipt signing key is unavailable");
+
+  if (!process.env.APP_ENCRYPTION_KEY && secrets.get("key")?.length !== 32) {
+    throw new Error("The persistent JëfPass encryption key is missing or invalid");
   }
-}
-
-function hydrateDatabase(database: DatabaseSync, rows: Record<string, unknown>[], baseline: Map<string, RemoteRecord>): void {
-  for (const row of rows) {
-    const id = row.$id;
-    const data = rowData(row);
-    if (typeof id !== "string" || typeof data.record_type !== "string" ||
-        typeof data.record_key !== "string" || typeof data.payload !== "string") continue;
-
-    const record: RemoteRecord = {
-      record_type: data.record_type,
-      record_key: data.record_key,
-      payload: data.payload,
-    };
-    baseline.set(id, record);
-
-    if (record.record_type === "document") {
-      const separator = record.record_key.indexOf(":");
-      if (separator <= 0) throw new AppwriteDatabaseError("A JëfPass document row has an invalid key");
-      const kind = record.record_key.slice(0, separator);
-      const documentId = record.record_key.slice(separator + 1);
-      // Validate stored JSON before making it visible to application code.
-      JSON.parse(record.payload);
-      database.prepare("INSERT INTO documents(kind,id,body) VALUES(?,?,?)")
-        .run(kind, documentId, record.payload);
-    } else if (record.record_type === "rate_limit") {
-      const value = JSON.parse(record.payload) as { count?: number; reset_at?: number };
-      if (typeof value.count !== "number" || !Number.isSafeInteger(value.count) ||
-          typeof value.reset_at !== "number" || !Number.isSafeInteger(value.reset_at)) {
-        throw new AppwriteDatabaseError("A JëfPass rate-limit row is malformed");
-      }
-      database.prepare("INSERT INTO rate_limits(id,count,reset_at) VALUES(?,?,?)")
-        .run(record.record_key, value.count, value.reset_at);
-    }
+  if (!secrets.has("issuer-private.pem")) {
+    throw new Error("The persistent JëfPass receipt signing key is unavailable");
   }
 }
 
-function currentRecords(database: DatabaseSync): Map<string, RemoteRecord> {
-  const records = new Map<string, RemoteRecord>();
-  const documents = database.prepare("SELECT kind, id, body FROM documents").all() as
-    { kind: string; id: string; body: string }[];
-  for (const document of documents) {
-    const key = `${document.kind}:${document.id}`;
-    records.set(rowId("document", key), {
-      record_type: "document",
-      record_key: key,
-      payload: document.body,
-    });
+async function persistD1Operations(context: RemoteContext): Promise<void> {
+  if (!context.operations.length) return;
+  if (context.operations.length > MAX_D1_BATCH_OPERATIONS) {
+    throw new Error(
+      "This request requires " + context.operations.length +
+      " D1 writes; the per-request safety limit is " + MAX_D1_BATCH_OPERATIONS,
+    );
   }
 
-  const rateLimits = database.prepare("SELECT id, count, reset_at FROM rate_limits").all() as
-    { id: string; count: number; reset_at: number }[];
-  for (const limit of rateLimits) {
-    records.set(rowId("rate_limit", limit.id), {
-      record_type: "rate_limit",
-      record_key: limit.id,
-      payload: JSON.stringify({ count: limit.count, reset_at: limit.reset_at }),
-    });
-  }
-  return records;
-}
-
-async function persistDatabaseChanges(context: RemoteContext): Promise<void> {
-  if (!context.transactionId) throw new AppwriteDatabaseError("The Appwrite request transaction was not started");
-  const current = currentRecords(context.database);
-  const operations: Record<string, unknown>[] = [];
-
-  for (const [id, previous] of context.baseline) {
-    if (!current.has(id)) {
-      operations.push({
-        action: "delete",
-        databaseId: context.databaseId,
-        tableId: context.tableId,
-        rowId: id,
-      });
-    }
-  }
-
-  for (const [id, record] of current) {
-    const previous = context.baseline.get(id);
-    if (previous && previous.record_type === record.record_type &&
-        previous.record_key === record.record_key && previous.payload === record.payload) continue;
-    if (Buffer.byteLength(record.payload, "utf8") > 60000) {
-      throw new AppwriteDatabaseError("A JëfPass record exceeds the Appwrite row payload limit");
-    }
-    operations.push({
-      action: "upsert",
-      databaseId: context.databaseId,
-      tableId: context.tableId,
-      rowId: id,
-      data: record,
-    });
-  }
-
+  const insertsAccount = context.operations.some(
+    (operation) => operation.label === "document-insert" && operation.values[0] === "accounts",
+  );
+  const statements = context.operations.map((operation) =>
+    context.d1.prepare(operation.sql).bind(...operation.values),
+  );
   try {
-    if (operations.length) {
-      await stageOperations(context, context.transactionId, operations);
-    }
-    await finishTransaction(context, context.transactionId, true);
-    context.transactionFinished = true;
+    await context.d1.batch(statements);
   } catch (error) {
-    try { await finishTransaction(context, context.transactionId, false); } catch { /* It may already be committed or expired. */ }
-    context.transactionFinished = true;
+    const message = error instanceof Error ? error.message : String(error);
+    if (insertsAccount && /unique|constraint/i.test(message)) throw new D1AccountConflictError();
     throw error;
   }
 }
@@ -352,55 +374,44 @@ export async function withRequestDatabase<T>(
   request: Request,
   operation: () => Promise<T>,
 ): Promise<T> {
-  // Local development keeps using the durable on-disk SQLite database exactly
-  // as before. Appwrite Sites must never silently fall back to ephemeral disk.
-  if (!process.env.APPWRITE_SITE_ID) return operation();
-
-  const apiKey = request.headers.get("x-appwrite-key");
-  const endpoint = process.env.APPWRITE_SITE_API_ENDPOINT;
-  const projectId = process.env.APPWRITE_SITE_PROJECT_ID;
-  const databaseId = process.env.APPWRITE_DATABASE_ID;
-  const tableId = process.env.APPWRITE_TABLE_ID;
-  const secretsTableId = process.env.APPWRITE_SECRETS_TABLE_ID;
-  if (!apiKey || !endpoint || !projectId || !databaseId || !tableId || !secretsTableId) {
-    throw new AppwriteDatabaseError("Appwrite database settings or the request-scoped Site API key are missing");
+  void request;
+  const d1 = globalThis.__JEFPASS_D1__;
+  if (!d1) {
+    if (process.env.JEFPASS_CLOUDFLARE === "true") throw new D1DatabaseUnavailableError();
+    return operation();
   }
 
+  if (!globalThis.__JEFPASS_D1_SCHEMA_READY__) {
+    await d1.exec(D1_SCHEMA);
+    globalThis.__JEFPASS_D1_SCHEMA_READY__ = true;
+  }
+
+  const [documentResult, rateLimitResult] = await Promise.all([
+    d1.prepare("SELECT kind, id, body FROM documents ORDER BY rowid").all<D1DocumentRow>(),
+    d1.prepare("SELECT id, count, reset_at FROM rate_limits").all<D1RateLimitRow>(),
+  ]);
+
+  const database = new D1SynchronousDatabase(
+    documentResult.results ?? [],
+    rateLimitResult.results ?? [],
+  );
   const context: RemoteContext = {
-    database: createDatabase(":memory:"),
-    endpoint,
-    projectId,
-    apiKey,
-    databaseId,
-    tableId,
-    secretsTableId,
-    baseline: new Map(),
+    database: database as unknown as DatabaseSync,
+    d1,
     secrets: new Map(),
-    transactionFinished: false,
+    operations: database.operations,
   };
 
   try {
-    // Secrets are initialized first in their own short transaction so every
-    // request uses the same persistent encryption and issuer keys.
-    await loadSecrets(context);
-    context.transactionId = await createTransaction(context);
-    const rows = await listTableRows(context, tableId, context.transactionId);
-    hydrateDatabase(context.database, rows, context.baseline);
+    await loadPersistentSecrets(d1, context.secrets);
     return await requestContext.run(context, async () => {
       const result = await operation();
-      await persistDatabaseChanges(context);
+      await persistD1Operations(context);
       return result;
     });
-  } catch (error) {
-    if (context.transactionId && !context.transactionFinished) {
-      try { await finishTransaction(context, context.transactionId, false); } catch { /* Best-effort rollback for failed requests. */ }
-      context.transactionFinished = true;
-    }
-    throw error;
   } finally {
-    context.database.close();
+    database.close();
     context.secrets.clear();
-    context.baseline.clear();
   }
 }
 

@@ -10,7 +10,7 @@ flowchart TD
   C[Customer browser] --> APP
   W --> IDB[IndexedDB: non-financial drafts]
   APP --> LOCALDB[Local SQLite file]
-  APP --> AWDB[Appwrite TablesDB via request-scoped key]
+  APP --> D1[Cloudflare D1 binding]
   APP --> NWC[NWC client through allowlisted WSS relay]
   NWC --> WALLET[Worker receiving wallet]
   PAYER[Customer Lightning wallet] --> WALLET
@@ -25,14 +25,14 @@ flowchart TD
 - Next.js App Router with TypeScript.
 - Node.js 24 runtime; API routes explicitly use the Node.js runtime.
 - Local development uses Node built-in SQLite via node:sqlite and a persistent local database file.
-- Appwrite Sites uses Appwrite TablesDB as its durable source of truth. Each API request loads a transaction-scoped snapshot into an isolated in-memory SQLite database, runs the existing synchronous service code, then commits changed records atomically to TablesDB.
+- Cloudflare Workers use D1 as their durable source of truth. Each API request hydrates a request-scoped synchronous compatibility database from D1, runs the existing service code without invoking node:sqlite, then commits queued writes atomically through D1 batch.
 - NWC client adapter using the pinned @getalby/sdk 9.0.0.
 - BOLT11 invoice decoding and validation using bolt11.
 - nostr-tools for event construction and signature verification.
 - idb-keyval for local non-financial drafts.
 - Zod for strict request validation.
 
-The Appwrite runtime does not rely on persistent local files. Appwrite transactions and request-scoped database snapshots are used for the hosted demo. The adapter currently reads the records table for each API request and is a compatibility bridge, not a high-scale query architecture; direct service-level TablesDB queries and pagination remain future optimization work.
+The Cloudflare runtime does not rely on persistent local files. Each API request hydrates documents and rate-limit rows from D1 and commits mutations in a D1 batch. The adapter currently reads all application documents for each API request and is a compatibility bridge, not a high-scale query architecture; direct service-level D1 queries remain future optimization work.
 
 ## 3. Application routes
 
@@ -64,11 +64,11 @@ The Appwrite runtime does not rely on persistent local files. Appwrite transacti
 
 ## 4. Persistence and secrets
 
-The application keeps its existing synchronous SQLite data contract: documents are keyed by kind and identifier, with a separate rate-limit table. Local development uses `data/jefpass.sqlite`. On Appwrite Sites, each API request starts an Appwrite TablesDB transaction, loads the `records` table into an isolated in-memory SQLite database, runs the existing service code synchronously, then stages creates/updates/deletes and commits them atomically. The request's temporary SQLite database is discarded after the response.
+The application keeps its existing synchronous SQLite data contract: documents are keyed by kind and identifier, with a separate rate-limit table. Local development uses data/jefpass.sqlite. On Cloudflare Workers, each API request loads documents and rate_limits rows from D1 into a request-scoped in-memory compatibility database. Existing synchronous service functions continue to use prepare().get(), all() and run(); this compatibility layer never constructs or calls the non-functional Workers node:sqlite stub. Writes are queued as prepared D1 statements and committed atomically through DB.batch(). The temporary in-memory view is discarded after the response.
 
-The Appwrite database `jefpass-db` contains two private tables. `records` stores application documents and rate-limit counters (`record_type`, `record_key`, JSON `payload`). `secrets` stores the persistent AES-256 key and Ed25519 issuer private key. Neither table grants public row/table permissions. Appwrite's request-scoped Site key, injected as `x-appwrite-key`, is used only on the server; no static API key is required.
+The D1 database jefpass-db contains three private application tables: documents stores JSON application records (kind, id, body); rate_limits stores counters and reset timestamps; app_secrets stores the durable AES-256 key and Ed25519 receipt issuer private key. Access is granted only through the Worker's private DB binding. There is no public database credential or browser-side database access.
 
-The adapter uses one Appwrite transaction for each request's data snapshot and writes. This preserves the synchronous SQLite service behavior while preventing writes from being left only on an ephemeral Site filesystem. Existing local SQLite files are not automatically imported into Appwrite. See `APPWRITE.md` for the schema and deployment settings.
+The compatibility layer currently loads all documents and rate-limit rows at the start of each API request. This preserves the prototype's synchronous service contract but is not a high-scale query pattern; optimize to direct, filtered D1 queries before the dataset grows substantially. See CLOUDFLARE.md for the schema and deployment settings.
 
 ### Wallet credential encryption
 
@@ -79,9 +79,9 @@ The decryptor retains support for the earlier unversioned envelope so existing i
 ### Database assumptions
 
 - Local mode: preserve the SQLite database and its generated key files together.
-- Appwrite mode: the records and secret keys live in private TablesDB tables; the SSR Site uses short-lived request-scoped credentials.
-- Appwrite mode currently loads the full records table into a request-local memory database. Keep the prototype dataset modest; optimize to direct filtered TablesDB queries before scaling.
-- A request may stage at most 100 changed rows on the current Free plan transaction limit; a larger mutation fails closed rather than partially writing.
+- Cloudflare mode: documents, rate limits and secret keys live in D1 tables accessible through the Worker's DB binding.
+- Cloudflare mode currently loads all documents and rate limits into a request-local memory database. Keep the prototype dataset modest; optimize to direct filtered D1 queries before scaling.
+- The application imposes a 100-statement per-request batch safety cap; larger mutations fail closed rather than partially writing.
 
 ## 5. Worker and customer workflow
 
@@ -238,13 +238,13 @@ Residual risks include a trusted single application host, plaintext job data and
 Before deployment:
 1. Use Node.js 24.x.
 2. Set APP_ORIGIN to the exact HTTPS browser-facing origin.
-3. Configure the Appwrite TablesDB database ID, records table ID and private secrets table ID.
-4. Grant the SSR Site `tables.read` and `tables.write` scopes and rely on Appwrite's per-request ephemeral key.
-5. Keep the `records` and `secrets` tables private; do not add public table permissions.
-6. Back up the Appwrite database and protect the issuer/encryption keys.
-6. Configure exact trusted WSS relays for NWC.
-7. Leave mainnet disabled.
-8. Run npm ci, tests, typecheck, production build and dependency audit.
-9. Test a genuine external test-network wallet payment before making a live-payment claim.
+3. Configure the D1 binding named `DB` in wrangler.jsonc.
+4. Apply the versioned D1 migration before deploying.
+5. Keep the `app_secrets` table accessible only through the Worker binding; never expose secret values to a browser.
+6. Back up the D1 database and protect the issuer/encryption keys.
+7. Configure exact trusted WSS relays for NWC.
+8. Leave mainnet disabled.
+9. Run npm ci, tests, typecheck, Cloudflare build and dependency audit.
+10. Test a genuine external test-network wallet payment before making a live-payment claim.
 
-See README.md, APPWRITE.md, INTEGRATIONS.md, THREAT_MODEL.md and PUBLICATION_CHECKLIST.md.
+See README.md, CLOUDFLARE.md, INTEGRATIONS.md, THREAT_MODEL.md and PUBLICATION_CHECKLIST.md.

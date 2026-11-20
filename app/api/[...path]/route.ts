@@ -1,5 +1,5 @@
 import { ZodError } from "zod";
-import { withRequestDatabase } from "../../../lib/db";
+import { D1AccountConflictError, withRequestDatabase } from "../../../lib/db";
 import { suggestDraft } from "../../../lib/ai";
 import { ApiError, SESSION_COOKIE, SESSION_SECONDS, boundedJson, login, logout, rateLimit, register, requestOrigin, sessionWorker, validateMutation } from "../../../lib/auth";
 import { attachNostrReceipt, getReceipt, verifyReceipt } from "../../../lib/receipt";
@@ -103,8 +103,10 @@ async function dispatchRequest(request: Request): Promise<Response> {
   try {
     return await withRequestDatabase(request, () => handleRequest(request));
   } catch (error) {
-    // Never fall back to per-instance filesystem storage on Appwrite Sites.
-    console.error("JëfPass persistent database request failed", error);
+    if (error instanceof D1AccountConflictError) return json({ error: "Email is already registered" }, 409);
+    // Cloudflare production must fail closed when D1 is unavailable; it must
+    // never silently create a per-isolate SQLite database.
+    console.error("JëfPass Cloudflare D1 request failed", error);
     return json({ error: "The application database is temporarily unavailable. Please retry." }, 503);
   }
 }

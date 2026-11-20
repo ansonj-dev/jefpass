@@ -26,14 +26,15 @@ Use this checklist before any public release or hackathon submission. A checked 
 ## Runtime and deployment
 
 - [x] Node 24 is documented.
-- [x] Local SQLite and Appwrite TablesDB persistence modes are documented.
+- [x] Local SQLite and Cloudflare D1 persistence modes are documented.
 - [x] APP_ORIGIN is explicitly required in production and must use HTTPS.
-- [x] JëfPass Appwrite Site and private TablesDB resources are configured.
-- [x] Site has request-scoped TablesDB read/write scopes; no long-lived API key is stored.
-- [x] Appwrite demo URL is deployed and reachable.
-- [ ] Complete Appwrite adapter CI and live register/login/job smoke tests.
+- [x] Cloudflare Worker is configured with a private DB D1 binding.
+- [x] D1 schema migration and first-request bootstrap are included; no database API key is stored.
+- [x] Cloudflare Worker and D1 binding configuration are committed to the repository.
+- [ ] Confirm Cloudflare D1 migration and Worker build completed for the deployed revision.
+- [ ] Complete live register/login/job smoke tests against the Cloudflare deployment.
 - [ ] Configure trusted NWC relays and perform a genuine external test-network payment.
-- [ ] Perform an isolated Appwrite database and secrets backup/restore drill.
+- [ ] Perform an isolated D1 backup/restore drill.
 - [ ] Load-test the full-table compatibility adapter before larger use.
 
 ## Wallet and protocol evidence

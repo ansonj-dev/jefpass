@@ -33,7 +33,7 @@ This repository contains a working Next.js prototype, not a production-certified
 - **Genuine external wallet settlements: 0 in the recorded verification evidence.** The adapter implementation and its fixture tests do not prove live wallet interoperability.
 - External NIP-07 signing and public relay publication have not been independently demonstrated in the recorded evidence.
 - No user interviews, adoption metrics or field pilot are claimed.
-- A public Appwrite-hosted demo is live. Its account, session, job, receipt, wallet-metadata and rate-limit records use Appwrite TablesDB; this is not a production-certified payment service.
+- The hosted deployment target is Cloudflare Workers with D1-backed account, session, job, receipt, wallet-metadata and rate-limit storage. This is not a production-certified payment service.
 
 See [VERIFICATION.md](VERIFICATION.md) and [LIMITATIONS.md](LIMITATIONS.md) for the evidence boundary. Never present a fixture, seeded record or screenshot as a real payment.
 
@@ -64,7 +64,7 @@ The offline feature is deliberately limited to local job drafts and queued job c
 
 - Next.js App Router and TypeScript run in the Node.js runtime.
 - API handlers enforce account ownership, request-origin checks, bounded JSON input and rate limits.
-- Local development uses Node 24 built-in SQLite on disk. Appwrite Sites uses TablesDB as the persistent source of truth and a request-scoped SQLite compatibility layer so the existing synchronous service logic behaves the same.
+- Local development uses Node 24 built-in SQLite on disk. Cloudflare Workers use D1 as the persistent source of truth and a request-scoped synchronous compatibility layer, without constructing the non-functional Workers node:sqlite stub.
 - NWC credentials are encrypted with AES-256-GCM. New versioned envelopes use worker-specific authenticated data; the reader remains compatible with the earlier envelope format.
 - Customer action proofs use JëfPass application-specific ephemeral Nostr kind 27236. They are not published to relays. NIP-98 reserves kind 27235 for HTTP authentication.
 - Worker receipt commitments use kind 30078 and are published only after an external NIP-07 signer signs them.
@@ -80,7 +80,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow, routes, state transitions 
 - A persistent writable local data directory
 - One running application instance
 
-SQLite uses Node's built-in node:sqlite API in local development. On Appwrite Sites, an API request receives a temporary SQLite mirror populated from TablesDB; changes are committed atomically back to TablesDB. The Site does not depend on a persistent local filesystem.
+SQLite uses Node's built-in node:sqlite API in local development. On Cloudflare Workers, the app never constructs a node:sqlite database: each API request hydrates an in-memory compatibility database from D1 and commits queued writes atomically with D1 batch. The Worker does not depend on a persistent local filesystem.
 
 ### Install and run
 
@@ -101,18 +101,16 @@ Start from .env.example. The essential settings are:
 |---|---|
 | DB_PATH | Persistent SQLite database path; defaults to ./data/jefpass.sqlite |
 | APP_ORIGIN | Exact browser-facing origin. Required in production and must use HTTPS |
-| APP_ENCRYPTION_KEY | Optional 32-byte key encoded as 64 hex characters or base64. Local mode generates a key beside the SQLite database; Appwrite mode stores the generated key in the private `secrets` table |
+| APP_ENCRYPTION_KEY | Optional 32-byte key encoded as 64 hex characters or base64. Local mode generates a key beside the SQLite database; Cloudflare mode stores the generated key in the private `app_secrets` D1 table |
 | LIGHTNING_NETWORK | regtest by default; testnet and signet are supported when the wallet reports the same network. Mainnet is disabled |
 | NWC_ALLOWED_RELAYS | Exact comma-separated WSS relay allowlist. Empty means wallet connections fail closed |
 | NEXT_PUBLIC_NOSTR_RELAYS | Optional public relay list for worker commitment publication |
 | AI_ENABLED | Must be explicitly true before any provider call is made |
 | OPENAI_API_KEY | Optional server-side key; never expose it to the browser |
 | OPENAI_MODEL | Optional model identifier; defaults to gpt-4.1-mini |
-| APPWRITE_DATABASE_ID | Appwrite Site mode only; TablesDB database ID (`jefpass-db`) |
-| APPWRITE_TABLE_ID | Appwrite Site mode only; records table ID (`records`) |
-| APPWRITE_SECRETS_TABLE_ID | Appwrite Site mode only; private key table ID (`secrets`) |
+| JEFPASS_CLOUDFLARE | Set to true in the Cloudflare Worker; requires the DB D1 binding |
 
-For Appwrite, set APP_ORIGIN to the exact HTTPS Site origin and the three APPWRITE_* IDs above. Appwrite injects the Site ID, project ID, regional API endpoint and a short-lived request-scoped API key; no long-lived API key belongs in the repository or browser. The adapter stores application rows and persistent signing/encryption keys in private TablesDB tables. Existing local SQLite files are not automatically imported.
+For Cloudflare, keep the D1 binding named DB in wrangler.jsonc. The application creates its tables on the first API request and also includes a versioned D1 migration. Set APP_ORIGIN to the exact HTTPS Worker/custom-domain origin. The AES encryption key and Ed25519 receipt issuer key are stored in the private app_secrets D1 table; APP_ENCRYPTION_KEY may instead be supplied as a Cloudflare secret. Existing local SQLite files are not automatically imported.
 
 ### Checks
 
@@ -187,7 +185,7 @@ The project is MIT licensed. Contributions should preserve the separation betwee
 
 - [PROJECT_BRIEF.md](PROJECT_BRIEF.md) — product hypothesis and judging-criteria mapping
 - [ARCHITECTURE.md](ARCHITECTURE.md) — components, API routes and state transitions
-- [APPWRITE.md](APPWRITE.md) — Appwrite TablesDB schema, SSR credentials and persistence behavior
+- [CLOUDFLARE.md](CLOUDFLARE.md) — Workers, OpenNext, D1 schema, binding and deployment
 - [INTEGRATIONS.md](INTEGRATIONS.md) — Lightning, Nostr, AI and offline integration contracts
 - [THREAT_MODEL.md](THREAT_MODEL.md) — threats, controls and residual risk
 - [VERIFICATION.md](VERIFICATION.md) — automated and manual evidence

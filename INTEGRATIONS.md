@@ -21,7 +21,7 @@ The app does not call pay_invoice, keysend or any spending method. Provision the
 
 ### Invoice creation
 
-1. Reserve the operation durably in SQLite.
+1. Reserve the operation durably in the configured database (local SQLite or Cloudflare D1).
 2. Validate the existing wallet fingerprint and configured network.
 3. Call get_info and validate the network and connection methods.
 4. Cross the dispatch boundary and call make_invoice exactly once.
@@ -55,7 +55,7 @@ Automated tests use synthetic signed invoices and wallet-response fixtures. Thes
 
 ### Customer action proofs
 
-Customer accept, acknowledge and dispute actions use JëfPass-specific ephemeral kind 27236. Events bind the job ID, canonical scope hash, action and one-time nonce. They are verified by the API and recorded in SQLite. They are not published to public relays.
+Customer accept, acknowledge and dispute actions use JëfPass-specific ephemeral kind 27236. Events bind the job ID, canonical scope hash, action and one-time nonce. They are verified by the API and recorded in the configured durable database. They are not published to public relays.
 
 NIP-98 uses kind 27235 for HTTP authentication; customer proof events must not use that kind. JëfPass proofs contain no tags and are not NIP-98 authentication.
 
@@ -103,10 +103,10 @@ No payment, invoice, customer signature or acknowledgement is queued offline. Th
 
 ## 6. Provider and deployment requirements
 
-- Node.js 24.x with node:sqlite.
-- One persistent application instance.
+- Node.js 24.x with node:sqlite for local development.
+- Cloudflare Workers/OpenNext with the D1 binding named DB for hosted deployment.
 - Exact HTTPS APP_ORIGIN in production.
-- Persistent data directory, encryption key and issuer key.
+- Durable D1 storage for documents, rate limits and receipt/encryption keys.
 - Trusted NWC WSS relay allowlist.
 - Optional public Nostr relay list.
 - Mainnet remains disabled.

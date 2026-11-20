@@ -8,7 +8,7 @@
 
 ## Automated CI result
 
-**Previous application CI: PASSED. Appwrite persistence changes require the new workflow run below.**
+**Historical application CI: PASSED. The Cloudflare D1 persistence refactor is a newer change and must pass its own workflow run before this report is considered current.**
 
 GitHub Actions successfully completed all configured steps on 19 November 2026:
 
@@ -63,18 +63,18 @@ The earlier development verification recorded this local unpaid journey:
 
 This local browser evidence is historical development evidence, not a test rerun by the GitHub Actions runner and not physical-device or customer usability certification.
 
-## Appwrite database deployment
+## Cloudflare D1 deployment
 
-The Appwrite project now has a private TablesDB database (`jefpass-db`) with `records` and `secrets` tables. The Site has `tables.read` and `tables.write` scopes. The new Appwrite adapter tests exercise persistence across separate SSR requests, stable key reuse and rollback behavior. The workflow run for this revision must be confirmed before treating those tests as passed.
+The project owner created an empty Cloudflare D1 database named `jefpass-db` (database ID `162b1629-d063-4d11-ac7a-ffdc8e3b743d`, APAC). This revision adds the D1 binding, schema migration, OpenNext custom Worker entry point and a synchronous compatibility adapter backed by D1. The tests cover persistence across requests, registration/login/session reuse, stable encryption/issuer keys, rollback and duplicate-account conflicts. The Cloudflare Worker deploy and live account smoke test must still be verified after this commit; no successful live registration is claimed here.
 
-The public Appwrite deployment is a demo, not a production-certified financial service. Local SQLite files are not automatically imported into the hosted database.
+Existing local SQLite files are not imported automatically. The previous Appwrite deployment was deleted by the project owner and is no longer part of the hosted architecture.
 
 ## External proof blockers
 
 - **Genuine external Lightning settlements: 0 in the recorded evidence.** The code implements a receive-only NWC adapter and settlement checks, but the adapter has not yet been demonstrated against a genuine receiving wallet and separate payer wallet.
 - External NIP-07 worker signing and relay publication have not been exercised in the recorded evidence.
 - No user interviews, adoption metrics or field pilot are claimed.
-- An Appwrite-hosted public demo is deployed; a production deployment and disaster-recovery exercise are not claimed.
+- The Cloudflare production Worker deployment and live D1 smoke test are not yet verified by this report.
 - AI provider quality, cost and compatibility have not been validated; AI is disabled by default.
 
 ## Important trust boundaries
@@ -85,7 +85,7 @@ The public Appwrite deployment is a demo, not a production-certified financial s
 - Customer Nostr signatures establish control of a browser key, not legal identity.
 - Worker receipt signatures require an external NIP-07 signer. A server issuer signature is not a worker signature.
 - Offline support covers non-financial drafts only. Payments and customer actions require connectivity.
-- Local SQLite requires one persistent server instance. The Appwrite demo uses TablesDB and ephemeral per-request storage, but the compatibility adapter reads the full records table and needs scale testing.
+- Local SQLite requires one persistent server instance. Cloudflare D1 is the hosted persistence target. The compatibility adapter hydrates all current documents for each API request and needs scale testing before production traffic.
 
 ## Reproduction
 
@@ -101,4 +101,4 @@ Use Node.js 24.x. Do not skip installation scripts; the SDK patch is required.
 
 ## Evidence statement
 
-JëfPass has a CI-verified application build and a live Appwrite demo backed by TablesDB. This revision's CI result must be checked before treating the Appwrite adapter tests as passed. The project still lacks externally verified wallet settlement, user-validated impact and production certification. Those are next release gates, not claims made by this report.
+JëfPass has historical CI-verified application checks. The Cloudflare D1 persistence refactor and its Cloudflare-specific build must pass the current workflow, and a live register/login smoke test must then be completed before claiming hosted persistence is verified. The project still lacks externally verified wallet settlement, user-validated impact and production certification. Those are next release gates, not claims made by this report.
