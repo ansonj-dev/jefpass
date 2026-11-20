@@ -1,199 +1,220 @@
+<div align="center">
+
+<img src="public/icon.svg" width="76" height="76" alt="JëfPass logo">
+
 # JëfPass
 
 **Your work. Your proof.**
 
-JëfPass is an open-source work-record and payment-evidence passport for independent repair technicians. It helps a worker agree a clear scope with a customer, record completion, verify an incoming Lightning payment, and keep a portable, shareable history of completed work.
+An open-source work-record and Lightning payment-evidence passport for independent repair technicians.
+Agree a clear scope, record completion, verify an incoming Lightning payment, and keep a portable, signed receipt.
 
-[![JëfPass CI](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml/badge.svg)](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Demo guide](docs/DEMO_GUIDE.md)
+[![CI](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml/badge.svg)](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-059669.svg)](LICENSE)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-000000.svg)](https://nextjs.org)
+[![Cloudflare Workers + D1](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-F38020.svg)](https://developers.cloudflare.com/workers/)
+[![Node.js 24](https://img.shields.io/badge/Node.js-24-5FA04E.svg)](https://nodejs.org)
 
-## The problem
+[Live demo](https://jefpass.ansonjoseph811.workers.dev) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Trust &amp; verification](#trust--verification) · [Docs](#documentation)
 
-Independent workers often rely on chat messages, paper notes and separate payment applications to document jobs. A worker may have difficulty carrying a consistent record of agreed work, customer acknowledgement and payment evidence from one customer or platform to another.
+</div>
 
-JëfPass explores a narrow workflow: one technician and one customer, starting with phone, laptop and small-appliance repairs. This is a product hypothesis, not a claim that interviews or adoption research have already validated the need. The project currently has no completed field interviews or measured pilot.
+---
 
-## What JëfPass does
+## Overview
 
-1. A technician creates a quote with a clear description, category, amount and optional due date.
-2. The customer opens an expiring link, reviews the exact scope and signs acceptance in their browser. A customer account is not required.
-3. The technician records completion. The same customer signing session can acknowledge the work or submit a dispute.
-4. The technician connects a dedicated receive-only Nostr Wallet Connect (NWC) connection and requests an invoice.
-5. JëfPass verifies the exact BOLT11 invoice and later reconciles the original invoice against the same wallet. A payment is marked SETTLED only when the wallet reports the incoming invoice settled and the returned preimage hashes to the original payment hash.
-6. JëfPass issues an immutable, signed receipt. A worker can keep it private, export a private proof bundle, or opt a completed record into a public passport.
+Independent technicians often stitch job records together from chat messages, paper notes and separate payment apps. Carrying a consistent record of the agreed work, the customer's acknowledgement and the payment evidence from one customer to the next is hard.
 
-**Service facts and payment facts remain separate.** Customer acceptance does not prove the work was completed. A completion acknowledgement does not prove that a payment settled. A receipt signature proves that the application issuer signed a specific record; it does not certify repair quality or legal identity.
+JëfPass explores one narrow workflow — a single technician and a single customer, starting with phone, laptop and small-appliance repairs. It keeps **service facts and payment facts separate**: a customer's acceptance does not prove the work was done, an acknowledgement does not prove a payment settled, and a receipt signature proves only that the issuer signed a specific record — not repair quality or legal identity.
 
-## Product status and evidence
+> This is a working prototype built for the Dakar Bitcoin Hack 2026, not a production-certified financial service. The default network is **REGTEST — no real money** and mainnet is always disabled.
 
-This repository contains a working Next.js prototype, not a production-certified financial service.
+## Screenshots
 
-- The account, worker profile, job lifecycle, customer confirmation, public passport, receipt issuer signature, browser receipt verifier, private export, and NWC adapter are implemented.
-- The NWC integration has automated tests for invoice validation, exact amounts, network checks, payment-hash matching, preimage verification and uncertain outcomes.
-- The recorded verification report describes an unpaid browser journey, a private bundle check and an offline draft sync.
-- **Genuine external wallet settlements: 0 in the recorded verification evidence.** The adapter implementation and its fixture tests do not prove live wallet interoperability.
-- External NIP-07 signing and public relay publication have not been independently demonstrated in the recorded evidence.
-- No user interviews, adoption metrics or field pilot are claimed.
-- The hosted deployment target is Cloudflare Workers with D1-backed account, session, job, receipt, wallet-metadata and rate-limit storage. This is not a production-certified payment service.
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/screenshots/01-landing.png" width="100%" alt="Landing page"><br>
+      <b>Landing</b><br>
+      <sub>Bilingual landing page introducing the four-step workflow.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/screenshots/02-workbench.png" width="100%" alt="Worker workbench"><br>
+      <b>Workbench</b><br>
+      <sub>Worker dashboard with jobs, separate service &amp; payment states, and stats.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/screenshots/03-ai-scope.png" width="100%" alt="AI scope assistant"><br>
+      <b>AI scope assistant</b><br>
+      <sub>Optional Fireworks assistant drafts a title, scope and category — the worker reviews before saving.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/screenshots/04-customer-link.png" width="100%" alt="Customer link and QR"><br>
+      <b>Shareable customer link</b><br>
+      <sub>Every job produces an expiring link and QR code — the customer needs no account.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/screenshots/05-customer-confirmation.png" width="100%" alt="Customer confirmation page"><br>
+      <b>Customer confirmation</b><br>
+      <sub>The customer reviews the exact scope and accepts (or disputes) it in their browser.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/screenshots/06-work-completed.png" width="100%" alt="Worker marks work completed"><br>
+      <b>Completion</b><br>
+      <sub>The worker records completion; service progress stays independent of payment.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/screenshots/07-customer-acknowledged.png" width="100%" alt="Customer acknowledges completion"><br>
+      <b>Acknowledgement</b><br>
+      <sub>The customer acknowledges the completed work with the same one-time browser key.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="docs/screenshots/08-receipt-verification.png" width="100%" alt="Receipt verification"><br>
+      <b>Verifiable receipt</b><br>
+      <sub>A signed receipt checked in-browser: SHA-256 commitment and Ed25519 issuer signature verified.</sub>
+    </td>
+  </tr>
+</table>
 
-See [VERIFICATION.md](docs/VERIFICATION.md) and [LIMITATIONS.md](docs/LIMITATIONS.md) for the evidence boundary. Never present a fixture, seeded record or screenshot as a real payment.
+## Architecture
 
-## Why these protocols are used
+<p align="center">
+  <img src="docs/architecture.svg" width="880" alt="JëfPass architecture diagram">
+</p>
+
+- **Next.js App Router + TypeScript** run on **Cloudflare Workers** through the OpenNext adapter (`nodejs_compat`).
+- API handlers enforce account ownership, same-origin mutations, bounded JSON input and rate limits.
+- **Cloudflare D1** is the persistent source of truth (`documents`, `rate_limits`, `app_secrets`). Each request hydrates a request-scoped, in-memory compatibility database from D1 and commits queued writes atomically with a D1 batch — the non-functional Workers `node:sqlite` stub is never constructed. Local development uses Node 24 built-in SQLite on disk.
+- Optional integrations: **Fireworks** (OpenAI-compatible) for scope drafting, a **receive-only NWC Lightning wallet** for invoices and settlement checks, and **Nostr** for receipt commitments and customer proofs.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for data flow, routes and state transitions, and [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md) for the Workers/D1 deployment.
+
+## How it works
+
+1. **Quote** — the technician writes a scope, category, amount in sats and optional due date.
+2. **Confirm** — the customer opens an expiring link, reviews the exact scope and signs acceptance in their browser; no account needed.
+3. **Complete** — the technician records completion. The same customer session acknowledges the work or raises a dispute.
+4. **Get paid, keep proof** — the technician requests an invoice from a receive-only wallet. Once the wallet reports settlement, JëfPass issues an immutable signed receipt that can stay private, be exported, or be shared on a public passport.
+
+## Trust &amp; verification
+
+Trust in JëfPass is deliberately narrow and checkable:
+
+- **Service state is never merged with payment state.** Acceptance, completion and settlement are distinct layers, not a single checkmark.
+- **Signed receipts.** Each receipt carries a canonical payload, a **SHA-256 commitment** and an **Ed25519 issuer signature**. The public verifier recomputes the commitment and checks the signature against the server's current issuer key. This is an integrity check, not an identity or payment oracle.
+- **Customer proofs.** Customer actions are signed with a **one-time browser key** scoped to the job and bound to a single-use nonce. This proves control of a browser key, not a legal identity.
+- **Payments.** NWC connections are **receive-only** and encrypted at rest (AES-256-GCM). A payment is marked `SETTLED` only when the wallet reports the incoming invoice settled and the returned preimage hashes to the original payment hash. Ambiguous outcomes stay `UNKNOWN` and are never silently retried.
+- **AI has no authority.** The assistant only drafts text; it cannot approve work, sign receipts, set payment state or move funds.
+- **Safe by default.** `REGTEST` network, mainnet disabled, high-entropy expiring links hashed at rest.
+
+For independent checks, obtain the issuer public key through a trusted channel and verify an exported bundle offline:
+
+```bash
+npm run verify:bundle -- path/to/private-export.json
+```
+
+Full detail: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) · [docs/VERIFICATION.md](docs/VERIFICATION.md) · [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
+
+## Why these protocols
 
 | Technology | Purpose |
 |---|---|
 | Bitcoin Lightning | Creates incoming invoices and provides wallet-reported settlement evidence |
-| Nostr Wallet Connect | Connects to a worker-controlled Lightning wallet using a dedicated, receive-only connection |
-| Nostr events | Signs customer actions and optionally lets a worker sign a receipt commitment with an external NIP-07 signer |
-| SHA-256 and Ed25519 | Commits to and signs receipt content so tampering can be detected |
-| AI | Optional assistant to draft job descriptions; it has no authority over consent, receipts or payments |
+| Nostr Wallet Connect | Connects to a worker-controlled wallet through a dedicated, receive-only connection |
+| Nostr events | Signs customer actions and, optionally, a worker-signed receipt commitment via a NIP-07 signer |
+| SHA-256 + Ed25519 | Commits to and signs receipt content so tampering is detectable |
+| Fireworks AI (optional) | Drafts job descriptions; no authority over consent, receipts or payments |
 | IndexedDB | Saves non-financial job drafts locally and syncs them when connectivity returns |
-
-## Interface
-
-The interface supports English and French and is designed mobile-first.
-
-- Public landing page: /
-- Worker workspace: /app
-- Customer confirmation: /confirm/[token]
-- Public receipt verifier: /verify/[receipt-id]
-- Opt-in public worker passport: /passport/[worker-id]
-
-The offline feature is deliberately limited to local job drafts and queued job creation. It does not support offline Lightning payments, offline customer signatures or a guaranteed offline application-shell reload.
-
-## Architecture at a glance
-
-- Next.js App Router and TypeScript run in the Node.js runtime.
-- API handlers enforce account ownership, request-origin checks, bounded JSON input and rate limits.
-- Local development uses Node 24 built-in SQLite on disk. Cloudflare Workers use D1 as the persistent source of truth and a request-scoped synchronous compatibility layer, without constructing the non-functional Workers node:sqlite stub.
-- NWC credentials are encrypted with AES-256-GCM. New versioned envelopes use worker-specific authenticated data; the reader remains compatible with the earlier envelope format.
-- Customer action proofs use JëfPass application-specific ephemeral Nostr kind 27236. They are not published to relays. NIP-98 reserves kind 27235 for HTTP authentication.
-- Worker receipt commitments use kind 30078 and are published only after an external NIP-07 signer signs them.
-
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for data flow, routes, state transitions and trust boundaries.
 
 ## Quick start
 
-### Requirements
+**Requirements:** Node.js 24.x, npm, and a persistent writable data directory for local development.
 
-- Node.js 24.x
-- npm
-- A persistent writable local data directory
-- One running application instance
-
-SQLite uses Node's built-in node:sqlite API in local development. On Cloudflare Workers, the app never constructs a node:sqlite database: each API request hydrates an in-memory compatibility database from D1 and commits queued writes atomically with D1 batch. The Worker does not depend on a persistent local filesystem.
-
-### Install and run
-
-~~~~bash
+```bash
 npm ci
 npm run dev -- --port 3100
-~~~~
+```
 
-Open http://localhost:3100.
+Open <http://localhost:3100>. Use the committed lockfile; the SDK postinstall patch is required, so do not install with scripts disabled.
 
-Use the committed lockfile. The SDK postinstall patch is required; do not install with scripts disabled.
+**Checks** (the same set runs in CI on pushes and pull requests):
 
-### Environment
-
-Start from .env.example. The essential settings are:
-
-| Variable | Purpose |
-|---|---|
-| DB_PATH | Persistent SQLite database path; defaults to ./data/jefpass.sqlite |
-| APP_ORIGIN | Exact browser-facing origin. Required in production and must use HTTPS |
-| APP_ENCRYPTION_KEY | Optional 32-byte key encoded as 64 hex characters or base64. Local mode generates a key beside the SQLite database; Cloudflare mode stores the generated key in the private `app_secrets` D1 table |
-| LIGHTNING_NETWORK | regtest by default; testnet and signet are supported when the wallet reports the same network. Mainnet is disabled |
-| NWC_ALLOWED_RELAYS | Exact comma-separated WSS relay allowlist. Empty means wallet connections fail closed |
-| NEXT_PUBLIC_NOSTR_RELAYS | Optional public relay list for worker commitment publication |
-| AI_ENABLED | Must be explicitly true before any provider call is made |
-| AI_API_KEY | Server-side provider bearer token (e.g. Fireworks key); never expose it to the browser. Legacy alias: OPENAI_API_KEY |
-| AI_BASE_URL | OpenAI-compatible endpoint; defaults to https://api.openai.com/v1. Fireworks: https://api.fireworks.ai/inference/v1 |
-| AI_MODEL | Model identifier; defaults to gpt-4.1-mini. Legacy alias: OPENAI_MODEL |
-| JEFPASS_CLOUDFLARE | Set to true in the Cloudflare Worker; requires the DB D1 binding |
-
-For Cloudflare, keep the D1 binding named DB in wrangler.jsonc. The application creates its tables on the first API request and also includes a versioned D1 migration. Set APP_ORIGIN to the exact HTTPS Worker/custom-domain origin. The AES encryption key and Ed25519 receipt issuer key are stored in the private app_secrets D1 table; APP_ENCRYPTION_KEY may instead be supplied as a Cloudflare secret. Existing local SQLite files are not automatically imported.
-
-### Checks
-
-~~~~bash
+```bash
 npm test
 npm run typecheck
 npm run build
 npm audit --omit=dev --audit-level=moderate
-~~~~
+```
 
-GitHub Actions runs the same checks on pushes to main and pull requests.
+## Deploy to Cloudflare
 
-## Demo data
+The app targets Cloudflare Workers with a D1 database bound as `DB`.
 
-Seed only quoted, unpaid demonstration jobs for a dedicated demo account:
+```bash
+npm run cf:build     # Next build + OpenNext bundle
+npm run cf:migrate   # apply D1 migrations
+npm run cf:deploy    # migrate + build + wrangler deploy
+```
 
-~~~~bash
-DEMO_EMAIL="demo@example.test" DEMO_PASSWORD="replace-with-a-private-password" npm run demo:seed
-~~~~
+Set `APP_ORIGIN` to the exact HTTPS origin, keep the `DB` binding in `wrangler.jsonc`, and store the AI key as a Worker **secret** (never a plain variable). The encryption and Ed25519 issuer keys live in the private `app_secrets` D1 table. See [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md).
 
-Do not use real customer data for a public demo. Seeded jobs are labelled and do not include customer acknowledgements, invoices or payment settlements.
+### Environment
 
-## Lightning wallet setup
+Start from [.env.example](.env.example).
 
-The default network is REGTEST / NO REAL MONEY. Mainnet is always disabled.
+| Variable | Purpose |
+|---|---|
+| `DB_PATH` | Local SQLite path; defaults to `./data/jefpass.sqlite` |
+| `APP_ORIGIN` | Exact browser-facing origin. Required in production and must use HTTPS |
+| `APP_ENCRYPTION_KEY` | Optional 32-byte key (64 hex or base64). If unset, a key is generated locally, or stored in the D1 `app_secrets` table on Cloudflare |
+| `LIGHTNING_NETWORK` | `regtest` by default; `testnet`/`signet` when the wallet matches. Mainnet is disabled |
+| `NWC_ALLOWED_RELAYS` | Exact comma-separated WSS relay allowlist. Empty fails closed |
+| `NEXT_PUBLIC_NOSTR_RELAYS` | Optional public relay list for worker commitment publication |
+| `AI_ENABLED` | Must be `true` before any provider call is made |
+| `AI_API_KEY` | Server-side provider bearer token (e.g. a Fireworks key). Legacy alias: `OPENAI_API_KEY` |
+| `AI_BASE_URL` | OpenAI-compatible endpoint. Default `https://api.openai.com/v1`; Fireworks: `https://api.fireworks.ai/inference/v1` |
+| `AI_MODEL` | Model id (e.g. `accounts/fireworks/models/gpt-oss-120b`). Legacy alias: `OPENAI_MODEL` |
+| `JEFPASS_CLOUDFLARE` | `true` in the Worker; requires the `DB` D1 binding |
 
-1. Create a dedicated NWC connection in a compatible wallet.
-2. Restrict the connection to get_info, make_invoice and lookup_invoice. Do not grant spending permissions.
-3. Configure the exact WSS relay URL in NWC_ALLOWED_RELAYS, including its normalized trailing slash.
-4. Configure LIGHTNING_NETWORK to match the wallet's get_info response.
-5. Paste the NWC URI into the authenticated Connections view. The server checks the connection, encrypts it at rest and displays only the wallet identity summary.
-6. Create a completed job, request its invoice, and pay that invoice from a separate compatible wallet on the same test network.
-7. Reconcile the original invoice. Do not create a replacement if the state is UNKNOWN.
+## Project structure
 
-A genuine external payment still needs to be performed and captured as evidence before claiming the wallet gate is demonstrated. Never fund this prototype with mainnet money.
+```
+app/            Next.js App Router routes (/, /app, /confirm, /verify, /passport, /api)
+components/     Client UI (auth, workbench, job editor/detail, public views)
+lib/            Server logic: db (SQLite + D1 adapter), auth, receipts, Lightning/NWC, AI, i18n
+migrations/     D1 schema
+docs/           Architecture, Cloudflare, threat model, verification and other references
+scripts/        Demo seed and bundle verifier
+tests/          Vitest suites (backend, Lightning, states, workflow guards, D1)
+worker.js       Cloudflare entry wrapper that exposes the D1 binding to the app
+wrangler.jsonc  Worker configuration (bindings, vars, D1)
+```
 
-## Receipts and independent verification
+## Status &amp; limitations
 
-Each receipt contains a canonical payload, SHA-256 commitment and Ed25519 signature from the application issuer. The public verifier recomputes the commitment and verifies the signature against the current installation key returned by the same JëfPass server.
-
-That is an integrity check, not an independent identity or payment oracle. A public payment status is an issuer-signed snapshot of wallet evidence at issuance, not a live wallet query. Authorized private exports include the invoice, preimage and signed customer action history so the bundle verifier can check available evidence offline.
-
-Obtain the issuer public key through an independent trusted channel and set TRUSTED_ISSUER_PUBLIC_KEY when running the private bundle verifier. Without an independently pinned key, a self-contained signature is internally consistent but does not establish who controls the issuer.
-
-~~~~bash
-npm run verify:bundle -- path/to/private-export.json
-~~~~
-
-Private proof exports can contain customer details, invoices and preimages. Keep them private.
-
-## Security model
-
-- No private wallet spending keys or seed phrases are requested.
-- NWC is receive-only by design and should be provisioned with only the required methods.
-- Invoice creation is reserved before external calls.
-- A preflight failure known to occur before make_invoice dispatch is marked FAILED and may be retried.
-- After make_invoice dispatch begins, a timeout or transport error is UNKNOWN. JëfPass never blindly retries an ambiguous request.
-- Settlement requires wallet-reported incoming status, exact amount and hash, and a matching 32-byte preimage.
-- Customer links are high-entropy, hashed at rest and expiring; signed actions bind the job scope and a one-use nonce.
-- Customer keys prove control of a browser key, not a real-world identity.
-- AI output is a reviewed draft only. AI cannot approve work, sign receipts, set payment state or spend funds.
-
-See [THREAT_MODEL.md](docs/THREAT_MODEL.md). This is a security-conscious prototype, not an independent audit or production certification.
-
-## Scope and non-goals
-
-JëfPass is not a wallet, exchange, escrow, lending service, public rating system, legal identity provider or mobile-money cash-out service. It does not prove physical work quality. It does not claim that a customer signature is a verified identity or that a server receipt signature independently proves a Lightning payment.
-
-The project is MIT licensed. Contributions should preserve the separation between service state and payment state, and should never weaken the conservative UNKNOWN handling.
+- Account, job lifecycle, customer confirmation, public passport, receipt signing, browser verification, private export and the NWC adapter are implemented and unit-tested.
+- The NWC adapter has tests for invoice validation, exact amounts, network checks, payment-hash matching, preimage verification and uncertain outcomes — but **genuine external wallet settlements and live relay publication have not been demonstrated** in the recorded evidence.
+- No user interviews, adoption metrics or field pilot are claimed. Never present a fixture, seeded record or screenshot as a real payment.
 
 ## Documentation
 
-- [PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) — product hypothesis and judging-criteria mapping
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, API routes and state transitions
-- [CLOUDFLARE.md](docs/CLOUDFLARE.md) — Workers, OpenNext, D1 schema, binding and deployment
-- [INTEGRATIONS.md](docs/INTEGRATIONS.md) — Lightning, Nostr, AI and offline integration contracts
-- [THREAT_MODEL.md](docs/THREAT_MODEL.md) — threats, controls and residual risk
-- [VERIFICATION.md](docs/VERIFICATION.md) — automated and manual evidence
-- [LIMITATIONS.md](docs/LIMITATIONS.md) — current boundaries
-- [DEMO_GUIDE.md](docs/DEMO_GUIDE.md) — safe repeatable demonstration
-- [PUBLICATION_CHECKLIST.md](docs/PUBLICATION_CHECKLIST.md) — release and submission review
+| Document | Contents |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, API routes and state transitions |
+| [CLOUDFLARE.md](docs/CLOUDFLARE.md) | Workers, OpenNext, D1 schema, bindings and deployment |
+| [INTEGRATIONS.md](docs/INTEGRATIONS.md) | Lightning, Nostr, AI and offline contracts |
+| [THREAT_MODEL.md](docs/THREAT_MODEL.md) | Threats, controls and residual risk |
+| [VERIFICATION.md](docs/VERIFICATION.md) | Automated and manual evidence |
+| [LIMITATIONS.md](docs/LIMITATIONS.md) | Current boundaries |
+| [DEMO_GUIDE.md](docs/DEMO_GUIDE.md) | Safe, repeatable demonstration |
+| [PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) | Product hypothesis and judging-criteria mapping |
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE). Contributions should preserve the separation between service state and payment state, and must never weaken the conservative `UNKNOWN` handling.

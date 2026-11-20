@@ -14,3 +14,9 @@ playwright-report/
 *.key
 *.bak
 *private-export*.json
+
+# Local tooling, demo captures and IDE state (not part of the product)
+.kiro/
+recordings/
+scripts/record-demo.mjs
+*.log
