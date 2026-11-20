@@ -4,7 +4,7 @@
 
 JëfPass is an open-source work-record and payment-evidence passport for independent repair technicians. It helps a worker agree a clear scope with a customer, record completion, verify an incoming Lightning payment, and keep a portable, shareable history of completed work.
 
-[![JëfPass CI](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml/badge.svg)](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml) · [Architecture](ARCHITECTURE.md) · [Threat model](THREAT_MODEL.md) · [Demo guide](DEMO_GUIDE.md)
+[![JëfPass CI](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml/badge.svg)](https://github.com/ansonj-dev/jefpass/actions/workflows/ci.yml) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Demo guide](docs/DEMO_GUIDE.md)
 
 ## The problem
 
@@ -35,7 +35,7 @@ This repository contains a working Next.js prototype, not a production-certified
 - No user interviews, adoption metrics or field pilot are claimed.
 - The hosted deployment target is Cloudflare Workers with D1-backed account, session, job, receipt, wallet-metadata and rate-limit storage. This is not a production-certified payment service.
 
-See [VERIFICATION.md](VERIFICATION.md) and [LIMITATIONS.md](LIMITATIONS.md) for the evidence boundary. Never present a fixture, seeded record or screenshot as a real payment.
+See [VERIFICATION.md](docs/VERIFICATION.md) and [LIMITATIONS.md](docs/LIMITATIONS.md) for the evidence boundary. Never present a fixture, seeded record or screenshot as a real payment.
 
 ## Why these protocols are used
 
@@ -69,7 +69,7 @@ The offline feature is deliberately limited to local job drafts and queued job c
 - Customer action proofs use JëfPass application-specific ephemeral Nostr kind 27236. They are not published to relays. NIP-98 reserves kind 27235 for HTTP authentication.
 - Worker receipt commitments use kind 30078 and are published only after an external NIP-07 signer signs them.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow, routes, state transitions and trust boundaries.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for data flow, routes, state transitions and trust boundaries.
 
 ## Quick start
 
@@ -173,7 +173,7 @@ Private proof exports can contain customer details, invoices and preimages. Keep
 - Customer keys prove control of a browser key, not a real-world identity.
 - AI output is a reviewed draft only. AI cannot approve work, sign receipts, set payment state or spend funds.
 
-See [THREAT_MODEL.md](THREAT_MODEL.md). This is a security-conscious prototype, not an independent audit or production certification.
+See [THREAT_MODEL.md](docs/THREAT_MODEL.md). This is a security-conscious prototype, not an independent audit or production certification.
 
 ## Scope and non-goals
 
@@ -183,15 +183,15 @@ The project is MIT licensed. Contributions should preserve the separation betwee
 
 ## Documentation
 
-- [PROJECT_BRIEF.md](PROJECT_BRIEF.md) — product hypothesis and judging-criteria mapping
-- [ARCHITECTURE.md](ARCHITECTURE.md) — components, API routes and state transitions
-- [CLOUDFLARE.md](CLOUDFLARE.md) — Workers, OpenNext, D1 schema, binding and deployment
-- [INTEGRATIONS.md](INTEGRATIONS.md) — Lightning, Nostr, AI and offline integration contracts
-- [THREAT_MODEL.md](THREAT_MODEL.md) — threats, controls and residual risk
-- [VERIFICATION.md](VERIFICATION.md) — automated and manual evidence
-- [LIMITATIONS.md](LIMITATIONS.md) — current boundaries
-- [DEMO_GUIDE.md](DEMO_GUIDE.md) — safe repeatable demonstration
-- [PUBLICATION_CHECKLIST.md](PUBLICATION_CHECKLIST.md) — release and submission review
+- [PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md) — product hypothesis and judging-criteria mapping
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, API routes and state transitions
+- [CLOUDFLARE.md](docs/CLOUDFLARE.md) — Workers, OpenNext, D1 schema, binding and deployment
+- [INTEGRATIONS.md](docs/INTEGRATIONS.md) — Lightning, Nostr, AI and offline integration contracts
+- [THREAT_MODEL.md](docs/THREAT_MODEL.md) — threats, controls and residual risk
+- [VERIFICATION.md](docs/VERIFICATION.md) — automated and manual evidence
+- [LIMITATIONS.md](docs/LIMITATIONS.md) — current boundaries
+- [DEMO_GUIDE.md](docs/DEMO_GUIDE.md) — safe repeatable demonstration
+- [PUBLICATION_CHECKLIST.md](docs/PUBLICATION_CHECKLIST.md) — release and submission review
 
 ## License
 
