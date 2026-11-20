@@ -87,11 +87,18 @@ function installAppwriteMock() {
 
     if (path.length === 4 && path[1] === "tables" && path[3] === "rows" && method === "GET") {
       const rows = [...table(path[2]).values()];
-      const cursor = url.searchParams.getAll("queries[]").find((query) => query.startsWith("cursorAfter("));
+      const queryValues = url.searchParams.getAll("queries[]");
+      const cursor = queryValues.find((query) => query.startsWith("cursorAfter("));
       const cursorId = cursor?.slice("cursorAfter(".length, -1).replace(/^"|"$/g, "");
       const cursorIndex = cursorId ? rows.findIndex((row) => row.$id === cursorId) : -1;
       const after = cursorIndex >= 0 ? rows.slice(cursorIndex + 1) : rows;
-      return jsonResponse({ total: after.length, rows: after });
+      const limitQuery = queryValues.find((query) => query.startsWith("limit("));
+      const requestedLimit = limitQuery ? Number(limitQuery.slice("limit(".length, -1)) : 25;
+      // Mirror the Appwrite TablesDB API cap so tests catch oversized pagination.
+      if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+        return jsonResponse({ message: "Invalid query: limit must be between 1 and 100" }, 400);
+      }
+      return jsonResponse({ total: after.length, rows: after.slice(0, requestedLimit) });
     }
 
     return jsonResponse({ message: `Unhandled mock request: ${method} ${url.pathname}` }, 404);
@@ -158,6 +165,33 @@ describe("Appwrite TablesDB persistence adapter", () => {
     await withRequestDatabase(request(), async () => {
       expect(readDocument<{ name: string }>("workers", "worker-123")?.name).toBe("Awa Updated");
     });
+  });
+
+  it("paginates TablesDB reads in batches no larger than Appwrite's 100-row limit", async () => {
+    const records = table("records");
+    for (let index = 0; index < 105; index += 1) {
+      const key = `jobs:${index}`;
+      const id = (await import("node:crypto")).createHash("sha256")
+        .update(`document:${key}`).digest("hex").slice(0, 36);
+      records.set(id, {
+        $id: id,
+        data: {
+          record_type: "document",
+          record_key: key,
+          payload: JSON.stringify({ id: index }),
+        },
+      });
+    }
+
+    let loadedCount = 0;
+    await withRequestDatabase(request(), async () => {
+      loadedCount = (await import("../lib/db")).listDocuments("jobs").length;
+    });
+
+    expect(loadedCount).toBe(105);
+    // No document changes were made by the read-only operation.
+    expect(records.size).toBe(105);
+    expect(table("secrets").size).toBe(2);
   });
 
   it("rolls back application changes when a request fails before its database commit", async () => {

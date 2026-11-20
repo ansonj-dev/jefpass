@@ -26,7 +26,8 @@ type RemoteContext = {
 
 const requestContext = new AsyncLocalStorage<RemoteContext>();
 const databases = new Map<string, DatabaseSync>();
-const PAGE_SIZE = 5000;
+// TablesDB listRows caps Query.limit at 100. Keep this adapter within the service limit.
+const PAGE_SIZE = 100;
 const MAX_TRANSACTION_OPERATIONS = 100;
 
 export class AppwriteDatabaseError extends Error {
